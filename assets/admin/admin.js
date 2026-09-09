@@ -45,6 +45,11 @@
     cfg: { owner: '', repo: '', branch: 'main', token: '' },
     data: null,
     baseline: '',
+    /* Blob sha of data/site-data.json as this panel loaded it.
+       '' = never loaded (demo mode). A string = known provenance.
+       null = loaded from a draft that predates this field, so provenance is
+       unknown and the publish guard refuses rather than guessing. */
+    dataSha: '',
     user: '',
     demo: false,
     section: 'home',
@@ -212,7 +217,12 @@
     draftTimer = setTimeout(() => {
       try {
         localStorage.setItem(LS_DRAFT, JSON.stringify({
-          key: draftKey(), savedAt: new Date().toISOString(), data: clone(S.data)
+          key: draftKey(), savedAt: new Date().toISOString(),
+          /* Which version of the file this draft was edited on top of. A draft
+             can sit in localStorage for weeks; without this the panel cannot
+             tell whether restoring it would revert someone else's work. */
+          dataSha: S.dataSha || null,
+          data: clone(S.data)
         }));
       } catch (e) { /* storage full — ignore */ }
     }, 600);
@@ -1457,17 +1467,89 @@
     };
   }
 
+  /* Pre-publish data guard.
+
+     The build-id guard above compares TEMPLATE versions. It does not compare
+     DATA, and that gap is the other half of the 29 Aug 2026 mechanism: a panel
+     holding an older data/site-data.json publishes its own snapshot over the
+     current one, reverting content silently.
+
+     Nothing downstream catches it. A stale-data publish is internally
+     consistent, so the data and the pages regenerated from it agree with each
+     other and every CI check passes. publishAtomic commits with parent = the
+     current head and force:false, so no history is lost; the content is simply
+     reverted by a legitimate fast-forward.
+
+     This compares the blob sha of the file this panel loaded against the sha on
+     the branch right now. Mismatch means someone changed the data after this
+     panel opened.
+
+     Fail-open policy matches templatesAreCurrent: a network failure is not
+     evidence of staleness. Unknown draft provenance is different, and fails
+     CLOSED, because that is a known unknown rather than a blip. */
+  async function dataIsCurrent() {
+    const SKIP = 'Publish data guard SKIPPED: ';
+    const UNGUARDED = ' Publishing UNGUARDED.';
+
+    if (S.demo) return { ok: true, note: 'demo mode, no repo to compare against' };
+
+    if (S.dataSha === null) {
+      return {
+        ok: false,
+        loaded: '(unknown)',
+        live: '(not checked)',
+        msg: 'Publish blocked. This session restored an unpublished draft that does ' +
+             'not record which version of the site data it was edited on top of, so ' +
+             'there is no way to tell whether publishing it would revert someone ' +
+             'else\'s changes. Copy anything you need out of the panel, reload it ' +
+             '(Ctrl+Shift+R), and reapply your edits.'
+      };
+    }
+    if (!S.dataSha) {
+      console.warn(SKIP + 'no data blob sha was recorded when this panel loaded.' + UNGUARDED);
+      return { ok: true, note: 'no loaded data sha, guard skipped' };
+    }
+
+    let live;
+    try {
+      live = (await getFile(DATA_PATH)).sha || '';
+    } catch (err) {
+      console.warn(SKIP + 'could not read the current ' + DATA_PATH + ' (' + err.message +
+        '). A network problem is not evidence of staleness.' + UNGUARDED);
+      return { ok: true, note: 'data fetch failed, guard skipped' };
+    }
+    if (!live) {
+      console.warn(SKIP + 'GitHub returned no sha for ' + DATA_PATH + '.' + UNGUARDED);
+      return { ok: true, note: 'live data sha empty, guard skipped' };
+    }
+
+    if (live === S.dataSha) return { ok: true, note: 'data sha matches (' + live.slice(0, 7) + ')' };
+    return {
+      ok: false,
+      loaded: S.dataSha,
+      live: live,
+      msg: 'Publish blocked. This panel loaded site data ' + S.dataSha.slice(0, 7) +
+           ' but the branch is now on ' + live.slice(0, 7) + '. Someone changed the ' +
+           'content after you opened this page. Publishing now would overwrite their ' +
+           'changes with your older copy. Reload the panel (Ctrl+Shift+R) and reapply ' +
+           'your edits.'
+    };
+  }
+
   async function runPublish() {
     if (publishing) return;
 
-    const guard = await templatesAreCurrent();
+    /* Templates first, then data. Both must pass; either refusal names both
+       versions so the message says what actually moved. */
+    let guard = await templatesAreCurrent();
+    if (guard.ok) guard = await dataIsCurrent();
     if (!guard.ok) {
       const note = $('#pub-note');
       note.style.display = 'block';
       note.className = 'err';
       note.textContent = guard.msg;
       $('#pub-go').disabled = true;
-      toast('Publish blocked: stale templates. Reload the panel.', 9000);
+      toast('Publish blocked: this panel is out of date. Reload it.', 9000);
       return;
     }
 
@@ -1600,6 +1682,10 @@
     try {
       const d = JSON.parse(localStorage.getItem(LS_DRAFT));
       S.data = d.data;
+      /* A draft written before this field existed, or by an older panel, has no
+         provenance. null makes dataIsCurrent() refuse instead of comparing
+         against whatever happens to be loaded now. */
+      S.dataSha = Object.prototype.hasOwnProperty.call(d, 'dataSha') ? d.dataSha : null;
       $('#draft-banner').innerHTML = '';
       markDirty(); render(S.section);
       toast('Draft restored — publish when ready');
@@ -1610,6 +1696,7 @@
     try {
       const df = await getFile(DATA_PATH);
       S.data = JSON.parse(df.text);
+      S.dataSha = df.sha || null;
       S.baseline = cleanJson(S.data);
       clearDraft();
       $('#draft-banner').innerHTML = '';
@@ -1627,6 +1714,7 @@
       await gh('/repos/' + cfg.owner + '/' + cfg.repo);
       const df = await getFile(DATA_PATH);
       S.data = JSON.parse(df.text);
+      S.dataSha = df.sha || null;
       S.baseline = cleanJson(S.data);
       localStorage.setItem(LS_CFG, JSON.stringify(cfg));
       enterApp();
