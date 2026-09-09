@@ -120,12 +120,33 @@ prevent it, and both must stay.
    `build-id.json`. Different means the site was rebuilt after the panel
    opened; the publish is refused with a message naming both ids.
 
-The guard deliberately does NOT block when the live id cannot be read (network
-error, 404, empty). A network problem is not evidence of staleness, and
-blocking every publish on a failed fetch would be its own outage. It also skips
-on an unstamped `dev` build so a local checkout still works.
+4. **`admin.js` also blocks the publish when the DATA moved.** The build id
+   covers templates only. The other half of the 29 Aug mechanism is a panel
+   holding an older `data/site-data.json` and publishing its own snapshot over
+   the current one. `dataIsCurrent()` compares the blob sha of the file the
+   panel loaded (`S.dataSha`, recorded by `connect()` and `reloadFromGitHub()`)
+   against the sha on the branch at publish time, and refuses on a mismatch,
+   naming both.
 
-**Never** replace the guard with a warning, and never remove the `?v=` from
+   Nothing downstream catches that class of revert. A stale-data publish is
+   internally consistent: the data and the pages regenerated from it agree, so
+   the output-drift check and every script in `tools/` pass. `publishAtomic`
+   commits with `parent` = the current head and `force: false`, so no history is
+   lost; the content is simply reverted by a legitimate fast-forward.
+
+5. **A localStorage draft records the sha it was edited on top of.** Drafts can
+   sit for weeks. A draft written before this field existed restores with
+   `S.dataSha = null`, and that fails CLOSED: the panel cannot tell whether
+   publishing it would revert someone else's work, so it refuses and asks for a
+   reload. Unknown provenance is a known unknown, not a network blip.
+
+Both guards deliberately do NOT block when the live value cannot be read
+(network error, 404, empty). A network problem is not evidence of staleness, and
+blocking every publish on a failed fetch would be its own outage. The template
+guard also skips on an unstamped `dev` build so a local checkout still works.
+The one exception is the null-provenance draft above, which refuses.
+
+**Never** replace either guard with a warning, and never remove the `?v=` from
 `admin.html`. Blocking a publish is always preferable to silently reverting the
 site.
 
