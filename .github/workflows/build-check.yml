@@ -1,3 +1,33 @@
+# DO NOT ADD A BRANCH FILTER TO THIS FILE.
+#
+# `on: [push, pull_request]` with no `branches:` key is load-bearing, not an
+# oversight. .github/workflows/publish-content.yml depends on it.
+#
+# The `main protection` ruleset requires a status check named `verify`, which is
+# the job below. Publishing works by pushing to `content`, letting this workflow
+# run `verify` against that exact commit, and then fast-forwarding `main` onto
+# the same already-verified SHA. That satisfies the required check under the
+# rule, which is why nothing in this repository needs a ruleset bypass actor.
+#
+# Filter this workflow to `main` and no `verify` check is ever produced for a
+# `content` commit, so the publish has nothing to satisfy the rule with. The
+# server refuses the push in these words, captured from a real refusal on
+# 10 Sep 2026:
+#
+#     remote: error: GH013: Repository rule violations found for refs/heads/main.
+#     remote: - Required status check "verify" is expected.
+#      ! [remote rejected] HEAD -> main (push declined due to repository rule violations)
+#
+# None of that is visible to the person publishing. The admin panel writes to
+# `content`, succeeds, and says so. Everything looks fine until someone notices
+# the live site never changed. publish-content.yml carries a step that waits for
+# `verify` and, after 120 seconds with no such check created at all, opens an
+# issue naming this file and this comment. That step is the only warning there
+# is, so do not remove it either.
+#
+# The job name below IS the required status check context. Renaming the job
+# breaks publishing in exactly the same way and produces the same silence.
+
 name: Build check
 on: [push, pull_request]
 jobs:
