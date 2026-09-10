@@ -1,0 +1,109 @@
+{
+  "_readme": [
+    "Figures that must agree everywhere they are stated on the site.",
+    "",
+    "This file is the single source. tools/check_figures.py reads it, and the",
+    "admin panel reads it in the browser to run the same check before a publish.",
+    "Duplicating the list in JavaScript would put two copies in the repo that can",
+    "drift apart, which hard rule 9 in CLAUDE.md forbids.",
+    "",
+    "HOW TO ADD A FIGURE",
+    "  name      what the figure is, used in the failure message",
+    "  accepted  every value string that is correct",
+    "  patterns  regexes that capture the value where the figure is stated",
+    "  note      optional, why the entry exists or what it must not be confused with",
+    "",
+    "Every capturing group in every pattern is compared against accepted. Write one",
+    "pattern per phrasing already in use, and prefer a slightly loose pattern over a",
+    "clever one. If a phrasing is not matched the check stays silent, which is the",
+    "safe direction; a wrong pattern that matches the wrong number is not.",
+    "",
+    "PATTERNS MUST BE PORTABLE between Python re and JavaScript RegExp, because both",
+    "run them. Stay inside the common subset: \\s \\d, character classes, non-capturing",
+    "groups, alternation, ? * +. Do not use named groups, lookbehind, \\A \\Z, inline",
+    "flags, or possessive quantifiers. tools/check_figures.py compiles every pattern",
+    "on startup and fails if one is invalid."
+  ],
+
+  "figures": [
+    {
+      "name": "cultivated area, late 1990s",
+      "accepted": ["5,707"],
+      "patterns": [
+        "from\\s+([\\d,]+)\\s+hectares\\s+in\\s+the\\s+(?:late\\s+)?1990s",
+        "down\\s+from\\s+([\\d,]+)\\s+in\\s+the\\s+late\\s+1990s"
+      ]
+    },
+    {
+      "name": "cultivated area, 2025",
+      "accepted": ["3,665"],
+      "note": "matches '... to about 3,665 as of 2025' and '... to 3,665 hectares as of 2025'",
+      "patterns": [
+        "hectares\\s+in\\s+the\\s+(?:late\\s+)?1990s\\s+to\\s+(?:about\\s+|under\\s+|over\\s+)?([\\d,]+)",
+        "to\\s+(?:about\\s+)?([\\d,]+)\\s*(?:hectares\\s*)?as of 2025",
+        "grows saffron on about\\s+([\\d,]+)\\s+hectares",
+        "Kashmir has about\\s+([\\d,]+)\\s+hectares"
+      ]
+    },
+    {
+      "name": "yield, earlier",
+      "accepted": ["2.5"],
+      "patterns": [
+        "from\\s+about\\s+([\\d.]+)\\s+kg per hectare"
+      ]
+    },
+    {
+      "name": "yield, current range",
+      "accepted": ["4.42", "5"],
+      "patterns": [
+        "between\\s+([\\d.]+)\\s+and\\s+([\\d.]+)\\s+kg per hectare",
+        "between\\s+([\\d.]+)\\s+to\\s+([\\d.]+)\\s+kg per hectare"
+      ]
+    },
+    {
+      "name": "Iran's share of world saffron production",
+      "accepted": ["85", "90"],
+      "patterns": [
+        "Iran at\\s+(\\d+)\\s+to\\s+\\d+\\s+percent of world production",
+        "Iran at\\s+\\d+\\s+to\\s+(\\d+)\\s+percent of world production",
+        "Gonabad says over\\s+(\\d+)\\s+percent"
+      ]
+    },
+    {
+      "name": "PDO Azafran de La Mancha colouring power floor",
+      "accepted": ["200"],
+      "note": "The PDO's own floor, NOT the ISO 3632 Category I floor. The site states the ISO figure as 190 or 200 and read-lab-report explains why sources differ. Conflating the two is the defect this entry exists to catch, so the patterns deliberately key on 'colouring power', which is the PDO's wording and appears nowhere else on the site.",
+      "patterns": [
+        "colouring power above\\s+(\\d+)",
+        "colouring power floor of\\s+(\\d+)"
+      ]
+    },
+    {
+      "name": "water test, thread count",
+      "accepted": ["3-4"],
+      "note": "Restated by the purity checker as well as by purity-tests, which is exactly the drift this file exists to catch: the tool and the post must not disagree about how the test is run.",
+      "patterns": [
+        "Place\\s+([\\d-]+)\\s+threads in a glass of cold water"
+      ]
+    },
+    {
+      "name": "water test, observation window",
+      "accepted": ["10-15"],
+      "patterns": [
+        "cold water and watch for\\s+([\\d-]+)\\s+minutes"
+      ]
+    },
+    {
+      "name": "ISO 3632 moisture maximum, percent",
+      "accepted": ["12"],
+      "note": "Stated in five posts and in the purity checker's cannotSee panel.",
+      "patterns": [
+        "moisture maximum of\\s+(\\d+)\\s+percent",
+        "[Mm]oisture maximum is\\s+(\\d+)\\s+percent",
+        "moisture at\\s+(\\d+)\\s+percent maximum",
+        "ISO 3632 allows up to\\s+(\\d+)",
+        "ISO 3632 limit of\\s+(\\d+)\\s+percent maximum"
+      ]
+    }
+  ]
+}
