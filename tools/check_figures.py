@@ -24,19 +24,21 @@ values, servings and delivery times, all of which legitimately differ between
 posts. A check that fires on correct data gets switched off, so only figures
 that are supposed to agree everywhere are tracked.
 
-HOW TO ADD A FIGURE
--------------------
-Append an entry to TRACKED. Each entry needs:
-  name      what the figure is, used in the failure message
-  accepted  the set of value strings that are correct
-  patterns  regexes that capture the value where that figure is stated
-Every capturing group in every pattern is compared against `accepted`. Write
-one pattern per phrasing already in use, and prefer a slightly loose pattern
-over a clever one. If a phrasing is not matched the check stays silent, which
-is the safe direction; a wrong pattern that matches the wrong number is not.
+Where the list lives
+--------------------
+tools/figures.json, not this file. The admin panel runs the same check in the
+browser before a publish, and a second copy of the list written in JavaScript
+would drift from this one. Hard rule 9: one source, two readers.
+
+That JSON carries the instructions for adding a figure, and the constraint that
+matters most: every pattern must be valid in BOTH Python re and JavaScript
+RegExp, because both run it. This script compiles every pattern on startup and
+fails if one is invalid, so a pattern that only Python accepts is caught here
+rather than silently doing nothing in the panel.
 
 Usage:  python tools/check_figures.py          (exit 1 on any conflict)
 """
+import io
 import json
 import os
 import re
@@ -50,94 +52,91 @@ except Exception:
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data", "site-data.json")
 
-TRACKED = [
-    {
-        "name": "cultivated area, late 1990s",
-        "accepted": {"5,707"},
-        "patterns": [
-            r"from\s+([\d,]+)\s+hectares\s+in\s+the\s+(?:late\s+)?1990s",
-            r"down\s+from\s+([\d,]+)\s+in\s+the\s+late\s+1990s",
-        ],
-    },
-    {
-        "name": "cultivated area, 2025",
-        "accepted": {"3,665"},
-        "patterns": [
-            # "... to about 3,665 as of 2025" / "... to 3,665 hectares as of 2025"
-            r"hectares\s+in\s+the\s+(?:late\s+)?1990s\s+to\s+(?:about\s+|under\s+|over\s+)?([\d,]+)",
-            r"to\s+(?:about\s+)?([\d,]+)\s*(?:hectares\s*)?as of 2025",
-            r"grows saffron on about\s+([\d,]+)\s+hectares",
-            r"Kashmir has about\s+([\d,]+)\s+hectares",
-        ],
-    },
-    {
-        "name": "yield, earlier",
-        "accepted": {"2.5"},
-        "patterns": [
-            r"from\s+about\s+([\d.]+)\s+kg per hectare",
-        ],
-    },
-    {
-        "name": "yield, current range",
-        "accepted": {"4.42", "5"},
-        "patterns": [
-            r"between\s+([\d.]+)\s+and\s+([\d.]+)\s+kg per hectare",
-            r"between\s+([\d.]+)\s+to\s+([\d.]+)\s+kg per hectare",
-        ],
-    },
-    {
-        "name": "Iran's share of world saffron production",
-        "accepted": {"85", "90"},
-        "patterns": [
-            r"Iran at\s+(\d+)\s+to\s+\d+\s+percent of world production",
-            r"Iran at\s+\d+\s+to\s+(\d+)\s+percent of world production",
-            r"Gonabad says over\s+(\d+)\s+percent",
-        ],
-    },
-    {
-        # The PDO's own floor, NOT the ISO 3632 Category I floor. The site states
-        # the ISO figure as 190 or 200 and read-lab-report explains why sources
-        # differ. Conflating the two is the defect this entry exists to catch, so
-        # the patterns deliberately key on "colouring power", which is the PDO's
-        # wording and appears nowhere else on the site.
-        "name": "PDO Azafran de La Mancha colouring power floor",
-        "accepted": {"200"},
-        "patterns": [
-            r"colouring power above\s+(\d+)",
-            r"colouring power floor of\s+(\d+)",
-        ],
-    },
-    {
-        # Restated by the purity checker as well as by purity-tests, which is
-        # exactly the drift this file exists to catch: the tool and the post
-        # must not disagree about how the test is run.
-        "name": "water test, thread count",
-        "accepted": {"3-4"},
-        "patterns": [
-            r"Place\s+([\d-]+)\s+threads in a glass of cold water",
-        ],
-    },
-    {
-        "name": "water test, observation window",
-        "accepted": {"10-15"},
-        "patterns": [
-            r"cold water and watch for\s+([\d-]+)\s+minutes",
-        ],
-    },
-    {
-        # Stated in five posts and now in the checker's cannotSee panel.
-        "name": "ISO 3632 moisture maximum, percent",
-        "accepted": {"12"},
-        "patterns": [
-            r"moisture maximum of\s+(\d+)\s+percent",
-            r"[Mm]oisture maximum is\s+(\d+)\s+percent",
-            r"moisture at\s+(\d+)\s+percent maximum",
-            r"ISO 3632 allows up to\s+(\d+)",
-            r"ISO 3632 limit of\s+(\d+)\s+percent maximum",
-        ],
-    },
+FIGURES = os.path.join(ROOT, "tools", "figures.json")
+
+# Syntax that Python's re accepts and JavaScript's RegExp does not. Compiling a
+# pattern here proves only that PYTHON can run it; the admin panel runs the same
+# pattern in the browser, where a Python-only construct throws and the check
+# silently stops matching. Rejecting these is what makes "both readers agree"
+# true rather than assumed.
+PY_ONLY = [
+    ("(?P<", "Python named group. JavaScript spells it (?<name>...)"),
+    ("(?P=", r"Python named backreference. JavaScript spells it \k<name>"),
+    ("(?#", "Python inline comment, not valid in JavaScript"),
+    ("(?>", "atomic group, not valid in JavaScript"),
+    (r"\A", "Python string-start anchor. Use ^"),
+    (r"\Z", "Python string-end anchor. Use $"),
+    (r"\z", "Python string-end anchor. Use $"),
+    ("(?i)", "Python inline flag, not valid in JavaScript"),
+    ("(?m)", "Python inline flag, not valid in JavaScript"),
+    ("(?s)", "Python inline flag, not valid in JavaScript"),
+    ("(?x)", "Python inline flag, not valid in JavaScript"),
+    ("(?(", "Python conditional group, not valid in JavaScript"),
 ]
 
+
+def load_tracked():
+    """Read tools/figures.json and compile every pattern.
+
+    Fails loudly rather than returning an empty list. Per hard rule 8 a check
+    that verifies presence must assert a non-zero corpus: "found no conflicts"
+    and "found nothing to examine" must not print the same thing. A missing or
+    empty figures.json means the guard is dead, not that the site is clean.
+    """
+    try:
+        with io.open(FIGURES, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except IOError:
+        print("FAIL  tools/figures.json is missing")
+        print("")
+        print("The tracked-figure list lives there, not in this script, because")
+        print("the admin panel reads the same file in the browser. Without it")
+        print("this check would examine nothing and report success.")
+        sys.exit(1)
+    except ValueError as err:
+        print("FAIL  tools/figures.json is not valid JSON: %s" % err)
+        sys.exit(1)
+
+    figures = doc.get("figures")
+    if not figures:
+        print("FAIL  tools/figures.json defines no figures")
+        print("")
+        print("Nothing would be examined. If tracking was dropped on purpose,")
+        print("remove this check and its build-check.yml step in the same commit.")
+        sys.exit(1)
+
+    bad = []
+    for i, fig in enumerate(figures):
+        where = fig.get("name") or ("figures[%d]" % i)
+        if not fig.get("name"):
+            bad.append((where, "no name"))
+        if not fig.get("accepted"):
+            bad.append((where, "no accepted values"))
+        pats = fig.get("patterns") or []
+        if not pats:
+            bad.append((where, "no patterns, so it can never match"))
+        for pat in pats:
+            try:
+                rx = re.compile(pat)
+            except re.error as err:
+                bad.append((where, "pattern is not valid regex (%s): %s" % (err, pat)))
+                continue
+            if rx.groups == 0:
+                bad.append((where, "pattern captures nothing: %s" % pat))
+            for token, why in PY_ONLY:
+                if token in pat:
+                    bad.append((where, "%s is Python-only, so the browser check "
+                                       "would fail on it: %s (%s)" % (token, pat, why)))
+    if bad:
+        print("FAIL  %d problem(s) in tools/figures.json" % len(bad))
+        print("")
+        for where, why in bad:
+            print("  %s" % where)
+            print("      %s" % why)
+            print("")
+        return sys.exit(1)
+
+    return figures
 
 def walk(node, path, out):
     """Collect every string value with a dotted path to it."""
@@ -164,13 +163,14 @@ def line_of(raw, needle):
 
 
 def main():
+    tracked = load_tracked()
     raw = open(DATA, encoding="utf-8").read()
     strings = []
     walk(json.loads(raw), "", strings)
 
     problems = []
     seen = set()
-    for fig in TRACKED:
+    for fig in tracked:
         for path, text in strings:
             for pat in fig["patterns"]:
                 for m in re.finditer(pat, text):
@@ -195,7 +195,7 @@ def main():
                         })
 
     print("checked %d tracked figures across %d strings in data/site-data.json"
-          % (len(TRACKED), len(strings)))
+          % (len(tracked), len(strings)))
     if not problems:
         print("OK  every tracked figure agrees everywhere it is stated")
         return 0
