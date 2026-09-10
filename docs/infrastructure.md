@@ -538,6 +538,8 @@ id            20613646
 name          main protection
 target        branch
 source        zeeshan-shaheen/saffronofkashmir  (Repository)
+              now Cyber-Kash/saffronofkashmir after the 10 Sep 2026 transfer;
+              every other field below survived it unchanged
 enforcement   active
 created_at    2026-08-10
 conditions    ref_name include ["~DEFAULT_BRANCH"], exclude []
@@ -598,9 +600,62 @@ organisation:
 ```
 
 Only `DeployKey` is available on a user-owned repository, and `actor_id: null`
-means *any* deploy key bypasses, which is a wider grant than intended. Moving
-the repository into an organisation makes the `Integration` actor available and
-is the reason the transfer is being done.
+means *any* deploy key bypasses, which is a wider grant than intended.
+
+### Correction: moving to an organisation did not make the App actor available
+
+The paragraph that stood here said that moving the repository into an
+organisation makes the `Integration` actor available, and that this was the
+reason the transfer was being done. **That was wrong, and the repository was
+transferred on the strength of it** on 10 Sep 2026.
+
+Re-run against `Cyber-Kash/saffronofkashmir` after the transfer:
+
+```
+{"actor_id":15368,"actor_type":"Integration","bypass_mode":"always"}
+  -> 422  Actor GitHub Actions integration must be part of the ruleset
+          source or owner organization
+{"actor_id":15368,"actor_type":"Integration","bypass_mode":"pull_request"}
+  -> 422  same
+{"actor_id":41898282,"actor_type":"Integration"}   (the bot user id)
+  -> 422  same
+
+{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}
+  -> accepted   (this one WAS unlocked by the move)
+{"actor_id":null,"actor_type":"DeployKey"}
+  -> accepted
+```
+
+`GET /orgs/Cyber-Kash/installations` returns `total_count: 0`. GitHub Actions is
+a first-party integration acting through `GITHUB_TOKEN`, so it has no
+installation record on the org, and the ruleset API refuses an `Integration`
+actor without one. An organisation changes which actor *types* are offered. It
+does not install the Actions App.
+
+The move cost nothing: no outage, the Pages certificate survived, the ruleset
+transferred intact, no secrets or settings were reset. It does enable things
+that were genuinely impossible before, org-owned Apps for the planned Cloudflare
+Worker, org membership for the team, and `OrganizationAdmin` as an actor type.
+**None of those was the stated reason**, and they should not be read back as the
+justification.
+
+What actually resolved it was that no bypass is needed. `build-check.yml` runs
+on every branch, so a commit pushed to `content` carries a `verify` result on
+its own SHA, and a required status check is satisfied by a pass on the SHA being
+pushed rather than by a pull request. `.github/workflows/publish-content.yml`
+waits for that check and then fast-forwards, which is accepted under the rule
+rather than around it. Proven in both directions on a scratch branch temporarily
+added to this ruleset: an unverified commit was refused with
+`Required status check "verify" is expected.`, and a verified one was accepted.
+
+### Rulesets transfer with the repository
+
+The pre-transfer checklist in this project said branch rulesets would have to be
+recreated on the new owner. **They do not.** Ruleset `20613646` survived the
+transfer with the same id, name, enforcement, conditions, all three rules, the
+same required check and the same single bypass actor. All eight fields were
+compared before and after and every one matched. The only field that changed is
+`source`, which now reads `Cyber-Kash/saffronofkashmir`.
 
 **The ruleset was modified and restored on 10 Sep 2026** while establishing the
 above. The `DeployKey` probe was a live `PUT` and briefly landed. It was
