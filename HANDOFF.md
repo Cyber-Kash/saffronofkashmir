@@ -16,7 +16,10 @@ Last updated: 2026-06-15.
 - A **static marketing + catalogue website** for a Kashmiri saffron business (Pampore, est. 2004).
 - Live at **https://saffronofkashmir.com**, hosted on **GitHub Pages** behind **Cloudflare**.
 - Orders happen over **WhatsApp** (no cart, no checkout, no payments on-site).
-- Repo: `github.com/zeeshan-shaheen/saffronofkashmir`. Default branch: `main`. `CNAME` pins the domain.
+- Repo: `github.com/Cyber-Kash/saffronofkashmir`. Default branch: `main`. `CNAME` pins the domain.
+  Transferred from `zeeshan-shaheen/saffronofkashmir` on 10 Sep 2026. GitHub redirects
+  the old path, but that redirect lapses if anyone claims the old username, so do not
+  rely on it in anything written down.
 
 There is **no server and no database.** You cannot run server-side code, store user data, or keep secrets
 in any file that ships. Everything the visitor sees is pre-built static HTML.
