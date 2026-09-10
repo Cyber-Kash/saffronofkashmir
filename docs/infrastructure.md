@@ -10,21 +10,41 @@ observed directly over HTTP. Most of this file was re-checked on 10 Sep 2026 in
 preparation for moving the repository into an organisation, so that anything the
 move broke would be visible against a recorded baseline.
 
-`[unconfirmed]` could not be read. There is no Cloudflare API credential in the
-working environment, and the Cloudflare dashboard needs an interactive login
-that is not available here either. Four things are only in that dashboard and
-remain unread; they are listed at the end. Everything else that was
-`[unconfirmed]` on 1 Sep has now been resolved.
+On 10 Sep 2026 a read-only Cloudflare API token was issued (Zone Read, Zone
+Settings Read, DNS Read, and the rules-related read permissions) and **every
+remaining `[unconfirmed]` item was read directly from the Cloudflare API**.
+Nothing in this file is now supplied rather than read.
 
-Treat `[unconfirmed]` as a starting point and check the dashboard before relying
-on it.
+Zone `saffronofkashmir.com`, id `3588da5304b3a7960765473e4dfc09fe`, status
+active, **plan Free Website**, nameservers `donald` and `rosemary`.
+
+That capture corrected three things this file previously asserted. Each
+correction is marked where it appears.
 
 ---
 
 ## 1. SSL/TLS
 
-**Mode: Full (Strict).** `[unconfirmed]` The setting itself is only in the
-Cloudflare dashboard. Behaviour consistent with it is `[verified 10 Sep 2026]`:
+**Mode: Full (Strict).** `[verified 10 Sep 2026]` Read from
+`GET /zones/{id}/settings/ssl`:
+
+```
+ssl                       strict     modified 2026-09-01
+always_use_https          on         modified 2026-04-24
+automatic_https_rewrites  on
+opportunistic_encryption  on
+tls_1_3                   zrt
+min_tls_version           1.0
+```
+
+`strict` is Full (Strict). The `modified 2026-09-01` timestamp matches the
+switch away from Flexible recorded below.
+
+**`min_tls_version` is 1.0**, which permits TLS 1.0 and 1.1. Nothing here
+depends on raising it and no change is proposed, but it is recorded because it
+is the one setting in this block that is more permissive than it needs to be.
+
+Behaviour consistent with the mode, also `[verified 10 Sep 2026]`:
 
 ```
 http://saffronofkashmir.com/       301 -> https://saffronofkashmir.com/
@@ -57,6 +77,32 @@ Cannot be done in one step. In this order:
 Setting Full (Strict) before a valid origin certificate exists returns **525 on
 every request**.
 
+### Rejected: dropping to Flexible to cover an outage
+
+When the GitHub Pages certificate has to be re-provisioned, for example during a
+repository transfer, the site is down until it arrives. **Do not set SSL/TLS to
+Flexible to keep the site up during that window.** It was proposed once, on
+10 Sep 2026, and rejected.
+
+Flexible means Cloudflare terminates TLS at the edge and talks to the origin
+over plaintext `http`. That is exactly the configuration that caused the
+**31 Aug 2026** fault recorded at the top of this section:
+
+- all 19 directory-style URLs answered `301` with a plaintext `http://`
+  `Location`, so every no-slash inbound link took two hops through cleartext
+- Cloudflare-to-origin traffic was unencrypted
+- GitHub Pages could not provision a certificate at all, which is the very
+  thing the workaround is meant to be waiting for
+
+The secondary argument for it, that edge cache would carry the site through, is
+also weak: this is a low-traffic site, so cache coverage across paths is thin
+and most requests would miss and reach a broken origin.
+
+**Take the outage instead.** Transfer at a low-traffic hour, leave SSL/TLS at
+Full (Strict) throughout, and accept that the site is down until the certificate
+is issued. Expect 10 to 30 minutes; assume an hour, because that is what it took
+on 31 Aug 2026.
+
 ### GitHub Pages `[verified 10 Sep 2026]`
 
 Read from the authenticated GitHub Pages API, so this is the setting itself and
@@ -85,73 +131,144 @@ renews automatically, but if HTTPS breaks near that date, check it first.
 
 ## 2. DNS
 
-Read from public resolvers on 10 Sep 2026. This is what the world actually
-sees, which for everything except proxy-hidden record types is stronger evidence
-than the dashboard.
+Read from `GET /zones/{id}/dns_records` on 10 Sep 2026. Sixteen records. This
+is the zone file itself, not an inference from what resolvers return, so proxy
+status and the underlying record types are visible.
 
-**Nameservers `[verified]`**
-
-```
-saffronofkashmir.com  NS  donald.ns.cloudflare.com    TTL 86400
-                      NS  rosemary.ns.cloudflare.com  TTL 86400
-```
-
-**Proxied (orange cloud) `[verified]`**
+TTL `1` means Auto.
 
 ```
-saffronofkashmir.com      A  104.21.92.83    TTL 300
-                          A  172.67.190.136  TTL 300
-www.saffronofkashmir.com  A  104.21.92.83    TTL 300
-                          A  172.67.190.136  TTL 300
+TYPE   NAME                             PROXIED  TTL   CONTENT
+A      saffronofkashmir.com             yes      1     185.199.111.153
+A      saffronofkashmir.com             yes      1     185.199.110.153
+A      saffronofkashmir.com             yes      1     185.199.109.153
+A      saffronofkashmir.com             yes      1     185.199.108.153
+CNAME  www.saffronofkashmir.com         yes      1     saffronofkashmir.com
+
+MX     saffronofkashmir.com             no       1     10 mx.zoho.com
+MX     saffronofkashmir.com             no       1     20 mx2.zoho.com
+MX     saffronofkashmir.com             no       1     50 mx3.zoho.com
+
+TXT    saffronofkashmir.com             no       3600  v=spf1 include:zohomail.com a mx include:_spf.mlsend.com ~all
+TXT    saffronofkashmir.com             no       3600  google-site-verification=ELCeRYXypP2AtFZgYaTpY8ZA1i41R5h3-Kn47b1NfDc
+TXT    saffronofkashmir.com             no       3600  mailerlite-domain-verification=78bf4e328f0450c638f23076f003758785b41281
+TXT    saffronofkashmir.com             no       1     pinterest-site-verification=f564b77ec5247c8587c303d86481fe48
+TXT    saffronofkashmir.com             no       1     zoho-verification=zb20301374.zmverify.zoho.com
+
+TXT    zmail._domainkey                 no       1     v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GN...
+CNAME  litesrv._domainkey               no       3600  litesrv._domainkey.mlsend.com
+TXT    _dmarc                           no       1     v=DMARC1; p=none; rua=mailto:...@dmarc-reports.cloudflare.net
 ```
 
-Both resolve to Cloudflare address space, not to the GitHub Pages IPs
-(`185.199.108-111.153`), which is what proves they are proxied.
+**The four apex `A` records point at GitHub Pages** (`185.199.108-111.153`) and
+are proxied, which is why a public resolver returns Cloudflare addresses instead.
+Both earlier readings were right about different things: the zone holds the
+Pages IPs, the world sees Cloudflare's.
 
-**`www` record type is still `[unconfirmed]`.** A `CNAME` query for `www`
-returns no answer while an `A` query returns the proxy addresses. That is
-exactly what a proxied `CNAME` looks like from outside, because Cloudflare
-answers `A` directly and never exposes the underlying record. It is also what a
-proxied `A` record looks like. The two cannot be told apart without the
-dashboard.
+**`www` is a `CNAME` to the apex, proxied.** Previously recorded as
+`[unconfirmed: record type]`, then recorded as impossible to determine from
+outside. Both were true at the time; the API settles it.
 
-**DNS only (grey cloud), and must stay that way `[verified]`**
+### Correction: the MailerLite DKIM does exist
 
-```
-MX     10 mx.zoho.com          TTL 300
-       20 mx2.zoho.com         TTL 300
-       50 mx3.zoho.com         TTL 300
+On 10 Sep 2026 this file was edited to say no MailerLite DKIM record could be
+found, after probing ten `TXT` selectors. **That was wrong**, and the mistake was
+in the probe, not the zone.
 
-TXT    v=spf1 include:zohomail.com a mx include:_spf.mlsend.com ~all
-       zoho-verification=zb20301374.zmverify.zoho.com
-       mailerlite-domain-verification=78bf4e328f0450c638f23076f003758785b41281
-       google-site-verification=ELCeRYXypP2AtFZgYaTpY8ZA1i41R5h3-Kn47b1NfDc
-       pinterest-site-verification=f564b77ec5247c8587c303d86481fe48
-                                    all TTL 300
+MailerLite publishes DKIM as a **`CNAME`**, at selector `litesrv._domainkey`,
+pointing to `litesrv._domainkey.mlsend.com`. A `TXT` query at that name returns
+nothing, and none of the ten selectors tried was `litesrv`. Mail from MailerLite
+is signed. The earlier entry is withdrawn.
 
-zmail._domainkey  TXT  v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GN...
-_dmarc            TXT  v=DMARC1; p=none; rua=mailto:c6eb6422fd0b414cabca6e66a09f7124@dmarc-reports.cloudflare.net
-```
+The lesson worth keeping: a negative result from an enumerated probe is evidence
+about the probe as much as about the target. It should have been marked as "not
+found at the selectors tried" rather than "does not exist", and it is the kind
+of claim that should wait for the authoritative source.
 
-**Correction to an earlier claim.** This file previously said DKIM existed for
-Zoho *and for MailerLite*. Zoho's is confirmed, at selector `zmail._domainkey`.
-**No MailerLite DKIM record was found**, at any of ten common selectors
-(`ml`, `mailerlite`, `mlsend`, `default`, `s1`, `s2`, `selector1`, `google`,
-`zoho`, `zmail`). MailerLite is verified through the apex `TXT` record instead,
-which is present. Either the DKIM was never added or it uses a selector not
-tried; check the MailerLite dashboard before assuming mail from it is signed.
+### Mail posture
 
-DMARC is present and set to `p=none`, reporting to Cloudflare's DMARC
-Management. `p=none` monitors and enforces nothing.
+SPF, DKIM for both senders, and DMARC are all present. **DMARC is `p=none`**,
+which monitors and enforces nothing; reports go to Cloudflare's DMARC
+Management. Raising it to `quarantine` is a decision for whoever owns
+deliverability, not a defect.
 
 Cloudflare cannot proxy `MX`, and proxying mail-related records breaks delivery
-and domain authentication.
+and domain authentication. Every mail record above is correctly DNS-only.
 
 ---
 
 ## 3. Redirect rules
 
-Order matters. Listed in the order they must run.
+Order matters, and the order below is the order the API returns, which is the
+order Cloudflare evaluates them in.
+
+### The rules, verbatim `[verified 10 Sep 2026]`
+
+Ruleset `003a507ba942450b81c509d3ec573cc0`, phase `http_request_dynamic_redirect`,
+last updated 2026-09-02. **Seven rules. All seven are enabled.**
+
+```
+1. www-to-apex
+   when  http.host eq "www.saffronofkashmir.com"
+   then  301  concat("https://saffronofkashmir.com", http.request.uri)
+   preserve_query_string  false
+
+2. blog-mongra-grade-retired
+   when  http.request.uri.path in {"/blog/mongra-grade/" "/blog/mongra-grade"}
+   then  301  https://saffronofkashmir.com/blog/grade-names/
+   preserve_query_string  true
+
+3. blog-five-fakes-retired
+   when  http.request.uri.path in {"/blog/five-fakes/" "/blog/five-fakes"}
+   then  301  https://saffronofkashmir.com/blog/purity-tests/
+   preserve_query_string  true
+
+4. html-to-extensionless-noquery
+   when  http.request.uri.path in {"/products.html" "/recipes.html" "/blogs.html"
+                                   "/terms.html" "/shipping-policy.html"
+                                   "/returns-policy.html" "/privacy-policy.html"}
+         and http.request.uri.query eq ""
+   then  301  concat("https://saffronofkashmir.com",
+                     substring(http.request.uri.path, 0, -5))
+   preserve_query_string  false
+
+5. html-to-extensionless
+   when  (same seven paths) and http.request.uri.query ne ""
+   then  301  concat("https://saffronofkashmir.com",
+                     substring(http.request.uri.path, 0, -5),
+                     "?", http.request.uri.query)
+   preserve_query_string  false
+
+6. trailing-slash-to-canonical
+   when  http.request.uri.path in {"/products/" "/recipes/" "/blogs/" "/terms/"
+                                   "/shipping-policy/" "/returns-policy/"
+                                   "/privacy-policy/"}
+   then  301  concat("https://saffronofkashmir.com",
+                     substring(http.request.uri.path, 0, -1))
+   preserve_query_string  true
+
+7. index-html-to-root
+   when  http.request.uri.path in {"/index.html" "/index"}
+   then  301  https://saffronofkashmir.com/
+   preserve_query_string  true
+```
+
+Three things this confirms that were previously inferred from behaviour:
+
+**Both `.html` rules enumerate seven paths.** Neither is a wildcard. `index.html`
+is handled separately by rule 7, which brings the total to eight. That is why
+`zzz-not-real.html` returns 404 rather than redirecting, and it is the reason a
+new file-backed page must either be added to these lists or built
+directory-backed instead. See the consequence note further down.
+
+**`trailing-slash-to-canonical` enumerates the same seven paths.** It is not
+general either, which is why `/blog/<slug>/` keeps its trailing slash rather
+than having it stripped.
+
+**The retirement rules sit at positions 2 and 3, above
+`trailing-slash-to-canonical` at 6.** That ordering requirement is explained
+below and is satisfied.
+
 
 Rule names and the order itself are `[unconfirmed]`. The status codes, targets,
 query-string behaviour and the two corrected expressions below are `[verified]`
@@ -324,24 +441,94 @@ new page must be built.
 
 ---
 
-## 4. Disabled rules
+## 4. Rules that no longer exist `[verified 10 Sep 2026]`
 
-Five wildcard rules, for `index`, `products`, `recipes`, `blogs` and `privacy`,
-are **Disabled, not deleted**. `[unconfirmed: all of it]`
+**Correction.** This file previously said five wildcard rules, for `index`,
+`products`, `recipes`, `blogs` and `privacy`, were **Disabled, not deleted**,
+and instructed that they be left disabled.
 
-They are superseded by `html-to-extensionless` and `index-html-to-root`. Reasons
-they were replaced:
+**They do not exist.** The dynamic-redirect ruleset holds seven rules and all
+seven are enabled. There are no disabled rules in it, and
+`GET /zones/{id}/pagerules` returns zero, so they are not sitting as legacy Page
+Rules either. They were deleted at some point, not disabled.
+
+Nothing depends on them. The reasons they were replaced still stand and are kept
+here because they explain why the current rules are shaped as they are:
 
 - They matched on the full URI including hostname, rather than on path alone.
 - The `index` rule matched `http://` only, so it never fired on real traffic
   once HTTPS was enforced.
 - Between them they left four `.html` paths uncovered.
 
-Leave them disabled. Do not re-enable without re-checking those three points.
+The instruction "leave them disabled" is withdrawn, because there is nothing to
+leave.
 
 ---
 
-## 5. Branch protection `[verified 10 Sep 2026]`
+## 5. Caching `[verified 10 Sep 2026]`
+
+Two rules in the `http_request_cache_settings` phase. Neither was recorded here
+before. The `http_request_firewall_custom` ruleset exists and is **empty**.
+
+```
+1. short cache for site assets   ENABLED
+   when  (http.request.uri.path contains "/assets/js/")
+      or (http.request.uri.path contains "/assets/css/")
+   then  cache: true, edge_ttl 120s, browser_ttl 120s, both override_origin
+```
+
+That one works and is why `main.js` and `style.css` carry a two-minute TTL.
+
+### The admin no-cache rule has never matched anything
+
+```
+2. admin no-cache   ENABLED
+   when  (http.request.uri.path contains " \"/admin\"")
+      or (http.request.uri.path contains "\"/admin.html\"")
+      or (http.request.uri.path contains "\"/assets/admin/\"")
+   then  cache: false
+```
+
+**The match strings contain literal double-quote characters**, and the first also
+has a leading space. A URL path never contains a `"`, so none of the three
+conditions can ever be true. The rule is Enabled, has been for months, and has
+never fired. Someone pasted quoted values into a field that already quotes them.
+
+Confirmed against live responses:
+
+```
+/assets/admin/templates.js   cf-cache-status: MISS      cache-control: max-age=14400
+/assets/admin/admin.js       cf-cache-status: MISS      cache-control: max-age=14400
+/admin.html                  cf-cache-status: DYNAMIC   cache-control: max-age=600
+/build-id.json               cf-cache-status: DYNAMIC   cache-control: max-age=600
+/assets/js/main.js           cf-cache-status: EXPIRED   cache-control: max-age=600
+```
+
+`MISS` means Cloudflare considers the file cacheable and simply did not have it.
+A working bypass rule would show `BYPASS`. So **both panel scripts are edge
+cacheable and carry a four-hour browser `max-age`**, which is the exact
+condition behind the 29 Aug 2026 incident where a stale cached `templates.js`
+silently reverted 14 files.
+
+**It is not currently causing harm**, because `admin.html` loads both scripts as
+`?v=<build id>` and the id changes whenever either file changes, so the URL
+changes and neither cache can serve the old copy. The `?v=` is doing the entire
+job. This rule is decoration that looks like protection.
+
+`admin.html` and `build-id.json` show `DYNAMIC` because Cloudflare does not cache
+HTML or JSON by default, not because the rule worked.
+
+**Fix, when someone is next in the dashboard:** rewrite the expression as
+`starts_with(http.request.uri.path, "/admin") or
+starts_with(http.request.uri.path, "/assets/admin/")` with no inner quotes.
+Recorded rather than done, because the token used for this capture is read-only.
+
+This is the fourth rule found in this project that was Active for months and
+matched nothing. The pattern is in `CLAUDE.md` hard rule 8.
+
+---
+
+## 6. Branch protection `[verified 10 Sep 2026]`
 
 Read from the authenticated GitHub API. This is the whole of it; there is no
 legacy branch-protection object, which returns `404 Branch not protected`.
@@ -422,7 +609,7 @@ re-read afterwards. `updated_at` reflects that edit, not a change of policy.
 
 ---
 
-## 6. Pricing
+## 7. Pricing
 
 **The INR price is not a conversion of the AED price.** India is priced
 separately, at roughly half the AED price converted.
@@ -444,7 +631,7 @@ of which exists yet.
 
 ---
 
-## 7. What cannot be done in the repository
+## 8. What cannot be done in the repository
 
 **GitHub Pages has no redirect mechanism.** No `_redirects`, no `.htaccess`, no
 config file of any kind. Every redirect on this site is a Cloudflare rule
@@ -468,30 +655,38 @@ must be deleted explicitly in the same commit.
 
 ## What still needs confirming
 
-Four things, all of them only in the Cloudflare dashboard, which needs an
-interactive login. Everything else that was open on 1 Sep 2026 has been read and
-recorded above.
+**Nothing.** Every item that was open is now read from an authenticated source:
+the Cloudflare API for the zone, the GitHub API for Pages and the ruleset,
+public resolvers and live HTTP for behaviour.
 
-1. **SSL/TLS mode is literally set to Full (Strict).** Behaviour is consistent
-   with it and is recorded in section 1, but behaviour cannot distinguish Full
-   (Strict) from Full.
-2. **The exact expression, action, target and status code of each active rule.**
-   What each rule *does* is fully recorded in section 3 from observation. What
-   each rule *says* is not.
-3. **The order the rules appear in.** Order is load-bearing: the two retirement
-   rules must sit above `trailing-slash-to-canonical` or a no-slash request to a
-   retired path is normalised to a URL that no longer exists and answers 404.
-   The observed behaviour is consistent with the correct order, which is
-   evidence but not proof.
-4. **The five disabled rules**: that they exist, their names, their expressions,
-   and that they are Disabled rather than deleted.
+Three things this file previously asserted turned out to be wrong, and each is
+corrected in place rather than quietly overwritten:
 
-**One thing this file was wrong about, now corrected:** it claimed a MailerLite
-DKIM record exists. None was found. See section 2.
+1. **The MailerLite DKIM record exists.** It is a `CNAME` at
+   `litesrv._domainkey`, not a `TXT`. Section 2.
+2. **The five disabled wildcard rules do not exist.** They were deleted, not
+   disabled, and there is nothing to leave alone. Section 4.
+3. **`www` is a `CNAME` to the apex, proxied.** Section 2. Previously
+   unconfirmed, then recorded as undeterminable from outside, which was true of
+   the method rather than of the record.
 
-**One thing that cannot be resolved from outside at all:** whether `www` is a
-`CNAME` or an `A` record. Cloudflare's proxy hides the difference. Section 2
-explains why.
+One defect was found during the capture and is **not fixed**: the `admin
+no-cache` rule matches nothing, section 5. The token used was read-only.
+
+### Keeping it that way
+
+The read-only token used for this capture covers everything above. Every
+endpoint answered `200`; none returned `403`. If it is reissued, these are the
+calls that need to keep working:
+
+```
+GET /zones?name=saffronofkashmir.com
+GET /zones/{id}/settings/ssl                     and the other settings
+GET /zones/{id}/dns_records
+GET /zones/{id}/rulesets
+GET /zones/{id}/rulesets/phases/{phase}/entrypoint
+GET /zones/{id}/pagerules
+```
 
 Correct anything wrong here in place. A reference that is trusted and wrong is
-worse than no reference.
+worse than no reference, and this file has now been wrong three times.
