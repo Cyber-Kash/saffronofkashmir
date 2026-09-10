@@ -1,0 +1,377 @@
+# Publishes what the admin panel wrote.
+#
+# The panel writes to `content`, never to `main`. This workflow checks that
+# push and, only if everything passes, fast-forwards `main` to it. GitHub Pages
+# deploys from `main`, so a failing publish never reaches the live site.
+#
+# Why the panel does not write to `main` directly: the `main protection`
+# ruleset requires the `verify` status check, and a commit created through the
+# API has never run CI, so the push is refused. That refusal is what blocked the
+# panel for twelve days. Actions run *after* a ref moves, so an enforced
+# pre-push check on a direct push is impossible in principle. Moving the write
+# behind a workflow is what makes both possible at once: the panel is never
+# blocked, and `main` still only accepts checked content.
+#
+# NOBODY BYPASSES THE RULESET, INCLUDING THIS WORKFLOW.
+#
+# An earlier draft of this file said the push to `main` was performed by
+# github-actions[bot] "which is in the ruleset's bypass_actors". It is not, and
+# it cannot be: the ruleset API refuses an Integration actor that has no
+# installation record on the owning account, and the Actions app is first-party,
+# so it has none. See docs/infrastructure.md for the full correction.
+#
+# No bypass is needed. `build-check.yml` runs on every branch, so a commit
+# pushed to `content` has the `verify` check run against that exact SHA. A
+# required status check is satisfied by a pass on the SHA being pushed, not by a
+# pull request, so fast-forwarding `main` onto an already-verified commit is
+# accepted under the rule rather than around it. A red `verify` therefore really
+# does stop this workflow, which a bypass would have prevented.
+#
+# The cost of that design is the wait step below, and one dependency:
+# `build-check.yml` MUST keep running on all branches. If it is ever given a
+# branch filter, the `verify` check never appears on a `content` commit and
+# publishing stops. That file carries a comment saying so.
+#
+# RECURSION: pushes made with GITHUB_TOKEN do not trigger further workflow runs.
+# That is load-bearing here. Without it this workflow's push to `main` would
+# trigger sync-content.yml, whose push to `content` would trigger this one.
+#
+# OBSERVED, not assumed. On 10 Sep 2026 these workflows reached `main` by
+# accident inside a documentation pull request. sync-content.yml ran, created
+# `content` from `main`, and this workflow did NOT fire on that push. The guard
+# held on its first real exposure. Both files were then reverted off `main`.
+#
+# TEST LANE: pushing to `proof-content` runs this same code against
+# `proof-main`. It exists so the pipeline can be re-proven without touching the
+# live site. Delete the scratch branches when finished; leave the lane.
+
+name: Publish content
+
+on:
+  push:
+    branches: [content, proof-content]
+
+# Set here rather than by changing the repository default, which is `read`.
+# Only this workflow and sync-content.yml can write.
+# `checks: read` is what lets the wait step below see the `verify` result.
+# Without it the poll returns 403 and every publish fails.
+permissions:
+  contents: write
+  issues: write
+  checks: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Work out which branch this publishes to
+        id: target
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "proof-content" ]; then
+            echo "branch=proof-main" >> "$GITHUB_OUTPUT"
+            echo "lane=test" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch=main" >> "$GITHUB_OUTPUT"
+            echo "lane=live" >> "$GITHUB_OUTPUT"
+          fi
+
+      # github.event.before is not trustworthy. It is all-zeros on the first
+      # push to a new branch, and on a force push it names a commit that may no
+      # longer be reachable. Rather than let check_locked.py compare against
+      # nothing, the baseline is the branch being published to: that is the
+      # state currently live, which is what "did this publish change something
+      # locked" actually means. If content is two pushes ahead because the first
+      # failed, comparing against the target correctly catches both.
+      - name: Choose the baseline to compare against
+        id: baseline
+        run: |
+          TARGET="${{ steps.target.outputs.branch }}"
+          BEFORE="${{ github.event.before }}"
+          NOTE=""
+
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            NOTE="github.event.before was empty or all-zeros, so this is the first push to this branch."
+          elif [ "${{ github.event.forced }}" = "true" ]; then
+            NOTE="this was a force push, so github.event.before may name a commit that is no longer reachable."
+          elif ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            NOTE="github.event.before ($BEFORE) is not an object in this checkout."
+          else
+            NOTE="github.event.before was $BEFORE and is reachable."
+          fi
+
+          if git rev-parse --verify --quiet "origin/${TARGET}" >/dev/null; then
+            echo "ref=origin/${TARGET}" >> "$GITHUB_OUTPUT"
+            echo "Baseline: origin/${TARGET}. ${NOTE}"
+          else
+            echo "ref=" >> "$GITHUB_OUTPUT"
+            echo "Baseline: none, ${TARGET} does not exist yet. ${NOTE}"
+          fi
+          echo "note=${NOTE}" >> "$GITHUB_OUTPUT"
+
+      - name: Run every check
+        id: checks
+        run: |
+          set +e
+          REPORT=/tmp/publish-report.txt
+          : > "$REPORT"
+          # The issue step reads this if a failing step wrote one. A failure the
+          # panel operator CAN fix leaves it empty and gets the default advice.
+          : > /tmp/publish-todo.txt
+          FAILED=0
+
+          record () {   # record <plain description> <output file>
+            printf '%s\n\n' "$1" >> "$REPORT"
+            sed 's/^/    /' "$2" >> "$REPORT"
+            printf '\n' >> "$REPORT"
+          }
+
+          run () {      # run <plain description> <command...>
+            DESC="$1"; shift
+            OUT=$(mktemp)
+            "$@" > "$OUT" 2>&1
+            CODE=$?
+            if [ $CODE -ne 0 ]; then
+              FAILED=1
+              echo "::error::$DESC"
+              record "$DESC" "$OUT"
+            fi
+            cat "$OUT"
+          }
+
+          node build.js > /dev/null
+          OUT=$(mktemp)
+          git --no-pager diff --stat > "$OUT" 2>&1
+          if [ -s "$OUT" ]; then
+            FAILED=1
+            record "The published pages do not match the content they were built from. This usually means the site was published from an admin panel that was out of date. Reload the panel and publish again." "$OUT"
+          fi
+
+          run "A page contains a broken value such as NaN or undefined." python3 tools/check_output.py
+          run "A page's Google structured data is not valid." python3 tools/check_jsonld.py
+          run "A product's id does not match its web address." python3 tools/check_product_ids.py
+          run "Two places on the site give different values for the same figure." python3 tools/check_figures.py
+          run "A 'More from the blog' link points at an article that does not exist." python3 tools/check_related.py
+          run "The purity checker quotes a sentence that is no longer in the article it came from." python3 tools/check_checker.py
+
+          BASE="${{ steps.baseline.outputs.ref }}"
+          if [ -n "$BASE" ]; then
+            run "You changed something only a developer can change." python3 tools/check_locked.py --before "$BASE"
+          else
+            echo "check_locked skipped: no baseline branch to compare against yet."
+          fi
+
+          echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
+          exit $FAILED
+
+      # This is what replaces a bypass actor.
+      #
+      # `build-check.yml` runs on the same push that started this workflow, so
+      # the two run in PARALLEL. The `verify` check is what the branch ruleset
+      # requires, and it must already be green on this exact SHA before the
+      # fast-forward is attempted. Without this step the push races the check
+      # and is refused intermittently, which is the worst kind of failure: it
+      # works when you test it.
+      #
+      # Two deadlines, because the two faults need different messages.
+      #
+      #   APPEARS  120s   `verify` has not been created at all. That is not a
+      #                   slow runner, it is a check that is not going to run
+      #                   for this branch, and the usual cause is a branch
+      #                   filter added to build-check.yml.
+      #   FINISHES 900s   `verify` exists but has not concluded. A slow or
+      #                   queued runner. Rare, and worth waiting out.
+      #
+      # Only `success` proceeds. `skipped` and `neutral` are treated as
+      # failures rather than passes: build-check.yml has no condition that can
+      # skip it, so either conclusion means something changed that nobody here
+      # understands, and refusing to publish is the safe reading.
+      - name: Wait for the build check to pass on this exact commit
+        id: verifywait
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.sha }}"
+          START=$(date +%s)
+          APPEAR_BY=$(( START + 120 ))
+          FINISH_BY=$(( START + 900 ))
+
+          echo "Waiting for the 'verify' check on ${SHA}."
+
+          while : ; do
+            NOW=$(date +%s)
+            ELAPSED=$(( NOW - START ))
+
+            LINE=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" --jq '[.check_runs[] | select(.name == "verify")] | sort_by(.started_at) | last // {} | "\(.status // "none") \(.conclusion // "-")"' 2>/dev/null) || LINE="apierror -"
+            STATUS=${LINE%% *}
+            CONCLUSION=${LINE##* }
+            echo "  ${ELAPSED}s  status=${STATUS} conclusion=${CONCLUSION}"
+
+            if [ "$STATUS" = "completed" ]; then
+              if [ "$CONCLUSION" = "success" ]; then
+                echo "verify passed on ${SHA} after ${ELAPSED}s. Safe to fast-forward."
+                echo "waited=${ELAPSED}" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              {
+                echo "The site's own build check did not pass on these changes."
+                echo ""
+                echo "    the check is called   verify"
+                echo "    it finished as        ${CONCLUSION}"
+                echo "    on commit             ${SHA}"
+                echo ""
+                echo "Nothing was published, so the live site is exactly as it was."
+                echo "This is not something you can fix from the admin panel."
+              } > /tmp/publish-report.txt
+              {
+                echo "1. Nothing to undo. Your work is safe on the ${GITHUB_REF_NAME} branch."
+                echo "2. Send this issue to a developer. They need to look at the build check."
+              } > /tmp/publish-todo.txt
+              exit 1
+            fi
+
+            if [ "$STATUS" = "none" ] && [ "$NOW" -ge "$APPEAR_BY" ]; then
+              {
+                echo "The site's build check never started, so there was nothing to wait for."
+                echo ""
+                echo "    expected a check called   verify"
+                echo "    on commit                 ${SHA}"
+                echo "    on branch                 ${GITHUB_REF_NAME}"
+                echo "    waited                    ${ELAPSED}s"
+                echo ""
+                echo "FOR THE DEVELOPER: .github/workflows/build-check.yml must keep"
+                echo "running on every branch. If it has been given a branch filter,"
+                echo "no 'verify' check is produced for ${GITHUB_REF_NAME}, the ruleset"
+                echo "on the live branch refuses the push, and publishing stops dead."
+                echo "Remove the filter."
+                echo ""
+                echo "Nothing was published. The live site is exactly as it was."
+              } > /tmp/publish-report.txt
+              {
+                echo "1. Nothing to undo. Your work is safe on the ${GITHUB_REF_NAME} branch."
+                echo "2. Send this issue to a developer. The paragraph above is for them."
+              } > /tmp/publish-todo.txt
+              exit 1
+            fi
+
+            if [ "$NOW" -ge "$FINISH_BY" ]; then
+              {
+                echo "The site's build check was still running after 15 minutes, so this"
+                echo "publish gave up waiting for it."
+                echo ""
+                echo "    the check is called   verify"
+                echo "    last seen as          ${STATUS}"
+                echo "    on commit             ${SHA}"
+                echo ""
+                echo "Nothing was published and nothing is broken. Your changes are still"
+                echo "saved on the ${GITHUB_REF_NAME} branch. Try publishing again in a few"
+                echo "minutes: if the check has finished by then it will go straight out."
+              } > /tmp/publish-report.txt
+              {
+                echo "1. Nothing to undo and nothing to fix."
+                echo "2. Wait a few minutes and press Publish again."
+                echo "3. If it happens twice running, send this issue to a developer."
+              } > /tmp/publish-todo.txt
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+      - name: Fast-forward the live branch
+        if: success()
+        run: |
+          TARGET="${{ steps.target.outputs.branch }}"
+          git fetch origin "$TARGET" || true
+
+          if git rev-parse --verify --quiet "origin/${TARGET}" >/dev/null; then
+            if git merge-base --is-ancestor "origin/${TARGET}" HEAD; then
+              echo "origin/${TARGET} is an ancestor. Fast-forwarding."
+            else
+              echo "::error::${TARGET} and ${GITHUB_REF_NAME} have diverged."
+              {
+                echo "DIVERGED"
+                echo "origin/${TARGET} is not an ancestor of ${GITHUB_REF_NAME},"
+                echo "so moving it would discard commits. Refusing rather than forcing."
+                echo ""
+                echo "  ${TARGET} is at    $(git rev-parse --short origin/${TARGET})"
+                echo "  ${GITHUB_REF_NAME} is at $(git rev-parse --short HEAD)"
+              } > /tmp/publish-report.txt
+              {
+                echo "1. Nothing to undo. Nothing you typed caused this and nothing is lost."
+                echo "2. Do not publish again yet: it will be refused the same way."
+                echo "3. Send this issue to a developer. Two branches have to be put back"
+                echo "   in line by hand, and choosing which one wins is their call."
+              } > /tmp/publish-todo.txt
+              exit 1
+            fi
+          fi
+
+          # No --force and no --force-with-lease anywhere in this workflow.
+          # git rejects a non-fast-forward push on its own, which is the
+          # behaviour we want as a second line of defence. The ruleset is the
+          # third: it requires `verify` on this SHA, which the step above has
+          # already confirmed is green.
+          git push origin "HEAD:refs/heads/${TARGET}"
+          echo "Published. ${TARGET} is now $(git rev-parse --short HEAD)."
+
+      - name: Tell somebody it did not publish
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TARGET="${{ steps.target.outputs.branch }}"
+          BODY=/tmp/issue.md
+          {
+            echo "**Your changes were not published. The live site has not changed.**"
+            echo ""
+            echo "Everything you edited is safe. It is saved on the \`${GITHUB_REF_NAME}\` branch"
+            echo "and will publish as soon as the problems below are fixed."
+            echo ""
+            echo "## What went wrong"
+            echo ""
+            if [ -s /tmp/publish-report.txt ]; then
+              cat /tmp/publish-report.txt
+            else
+              echo "The publish stopped before it could say why. The full log is linked below."
+            fi
+            echo ""
+            echo "## What to do"
+            echo ""
+            # Not every failure is one the panel operator can undo. A divergence
+            # names no changes at all, and "undo the changes named above" is then
+            # advice that cannot be followed, which is worse than no advice.
+            # Steps that fail for a reason outside the panel write their own.
+            if [ -s /tmp/publish-todo.txt ]; then
+              cat /tmp/publish-todo.txt
+            else
+              echo "1. Open the admin panel and reload it (Ctrl+Shift+R)."
+              echo "2. Undo the changes named above."
+              echo "3. Publish again."
+              echo ""
+              echo "If a message says a developer changes something, send them this issue."
+            fi
+            echo ""
+            echo "Nothing here is urgent: the live site is serving the last version that passed."
+            echo ""
+            echo "---"
+            echo ""
+            echo "Publish attempt: \`$(git rev-parse --short HEAD)\` on \`${GITHUB_REF_NAME}\`, which would have gone to \`${TARGET}\`."
+            echo "Baseline compared against: \`${{ steps.baseline.outputs.ref }}\` (${{ steps.baseline.outputs.note }})"
+            echo "Full log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > "$BODY"
+
+          gh issue create \
+            --title "Publish did not go live - $(date -u '+%d %b %Y %H:%M') UTC" \
+            --body-file "$BODY" \
+            --label "publish-blocked" 2>/dev/null \
+          || gh issue create \
+            --title "Publish did not go live - $(date -u '+%d %b %Y %H:%M') UTC" \
+            --body-file "$BODY"
