@@ -5,3 +5,9 @@ evidence/
 *.log
 .DS_Store
 Thumbs.db
+
+# Playwright MCP writes page snapshots and console logs here while the panel
+# gate is being proved in a real browser. They are session artefacts, and
+# .nojekyll publishes this repo almost verbatim, so they must never be
+# committed into a live site.
+.playwright-mcp/

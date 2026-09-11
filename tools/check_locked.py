@@ -61,110 +61,86 @@ except Exception:
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data", "site-data.json")
 
-DEV = "A developer changes this through a pull request."
+LOCKED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "locked.json")
 
-LOCKED_PATHS = [
-    {
-        "match": "guarantee",
-        "what": "the purity guarantee",
-        "why": "It promises a full refund plus the cost of the test within 90 days. "
-               "It was reconciled against the returns policy on window, remedy and "
-               "coverage, and the two contradicted each other until that was fixed.",
-    },
-    {
-        "match": "policies",
-        "what": "a policy page (terms, returns, shipping or privacy)",
-        "why": "Regulatory text. The returns window, the remedy and the FSSAI "
-               "registration line all live here.",
-    },
-    {
-        "match": "products[].specs",
-        "what": "a product specification row",
-        "why": "These carry the crocin figure, the ISO category, the testing "
-               "laboratory and its NABL accreditation number. They are claims "
-               "about a measured result, not descriptions.",
-    },
-    {
-        "match": "brand.fssaiNumber",
-        "what": "the FSSAI registration number",
-        "why": "It is printed in the footer of every page as an official "
-               "registration. A wrong number is a regulatory problem, not a typo.",
-    },
-    {
-        "match": "posts[health-claims].body",
-        "what": "the 'Why We Do Not Make Health Claims' article",
-        "why": "It quotes FSSAI regulation 10(1) and UAE.S/FDS 2333 clause 11.1.4 "
-               "verbatim. Both quotations were checked against the source documents.",
-    },
-    {
-        "match": "posts[read-lab-report].body",
-        "what": "the 'How to Read a Saffron Lab Report' article",
-        "why": "It states the 190 against 200 crocin disagreement and deliberately "
-               "refuses to resolve it in our favour.",
-    },
-    {
-        "match": "posts[origins-compared].body",
-        "what": "the 'What Origin Actually Tells You' article",
-        "why": "It cites two published studies and the Spanish PDO specification, "
-               "each verified against the source.",
-    },
-    {
-        "match": "posts[purity-tests].body",
-        "what": "the 'How to Test Saffron Purity at Home' article",
-        "why": "The purity checker's reasoning is anchored to sentences in this "
-               "body. Editing it breaks those anchors and tools/check_checker.py "
-               "will fail.",
-    },
-    {
-        "match": "posts[purity-tests].checker",
-        "what": "the purity checker question tree",
-        "why": "Every option is anchored to a published sentence. The three "
-               "outcomes are deliberately not a score.",
-    },
+# Syntax Python's re accepts and JavaScript's RegExp does not. The panel runs
+# these same patterns in the browser, so a pattern that only compiles here would
+# pass this check and then throw in the one place a person is actually editing.
+# tools/check_figures.py carries the same list for the same reason.
+PY_ONLY = [
+    ("(?P<", "Python named group. JavaScript spells it (?<name>...)"),
+    ("(?P=", r"Python named backreference. JavaScript spells it \k<name>"),
+    ("(?#", "Python inline comment, not valid in JavaScript"),
+    ("(?>", "atomic group, not valid in JavaScript"),
+    (r"\A", "Python string-start anchor. Use ^"),
+    (r"\Z", "Python string-end anchor. Use $"),
+    (r"\z", "Python string-end anchor. Use $"),
+    ("(?i)", "Python inline flag, not valid in JavaScript"),
+    ("(?m)", "Python inline flag, not valid in JavaScript"),
+    ("(?s)", "Python inline flag, not valid in JavaScript"),
+    ("(?x)", "Python inline flag, not valid in JavaScript"),
+    ("(?(", "Python conditional group, not valid in JavaScript"),
 ]
 
-LOCKED_TOKENS = [
-    {
-        "pattern": r"ISO\s*3632",
-        "what": "an ISO 3632 claim",
-        "why": "The approved wording is \"lab tested to ISO 3632 Category I\", "
-               "never the bare grade and never \"certified\". Category I is a band, "
-               "not a score, and the site says so in several places.",
-        "instead": "Write the product copy without a testing claim and ask a "
-                   "developer to add the approved phrasing. Do NOT reach for a "
-                   "vaguer substitute such as \"internationally certified\" or "
-                   "\"premium certified quality\": a vague claim we cannot "
-                   "evidence is worse than a precise one, not safer.",
-    },
-    {
-        "pattern": r"Category\s+I\b",
-        "what": "an ISO grade claim",
-        "why": "\"Category I\" is a laboratory result for a specific lot, not a "
-               "marketing adjective.",
-        "instead": "Ask a developer. The approved phrasing is \"lab tested to "
-                   "ISO 3632 Category I\".",
-    },
-    {
-        "pattern": r"\bNABL\b",
-        "what": "a laboratory accreditation claim",
-        "why": "NABL accreditation belongs to the testing laboratory, not to us. "
-               "The accreditation number TC-9209 identifies a real body.",
-        "instead": "Ask a developer.",
-    },
-    {
-        "pattern": r"\bFSSAI\b",
-        "what": "an FSSAI registration claim",
-        "why": "FSSAI registration is a legal status with a number attached.",
-        "instead": "Ask a developer.",
-    },
-    {
-        "pattern": r"\bTC-?\s*\d{4}\b",
-        "what": "a laboratory accreditation number",
-        "why": "It identifies the accredited testing body and must match the "
-               "certificate.",
-        "instead": "Ask a developer.",
-    },
-]
+
+def load_locks():
+    """Read tools/locked.json, or fail loudly.
+
+    A missing or malformed lock file must never read as "nothing is locked".
+    That is the failure mode hard rule 8 exists for: a check that examines
+    nothing and a check that finds nothing would otherwise print the same
+    thing.
+    """
+    try:
+        with io.open(LOCKED, encoding="utf-8") as fh:
+            spec = json.load(fh)
+    except Exception as err:
+        print("FAIL  could not read %s: %s" % (LOCKED, err))
+        print("")
+        print("Without it nothing is locked, so this refuses rather than")
+        print("passing everything through.")
+        sys.exit(1)
+
+    paths = spec.get("paths") or []
+    tokens = spec.get("tokens") or []
+    if not paths and not tokens:
+        print("FAIL  %s defines no locks at all" % LOCKED)
+        print("")
+        print("Nothing would be examined, so nothing could be refused.")
+        sys.exit(1)
+
+    bad = []
+    for i, lock in enumerate(paths):
+        for key in ("match", "what", "why"):
+            if not lock.get(key):
+                bad.append(("paths[%d]" % i, "no %s" % key))
+    for i, lock in enumerate(tokens):
+        for key in ("pattern", "what", "why", "instead"):
+            if not lock.get(key):
+                bad.append(("tokens[%d]" % i, "no %s" % key))
+        pat = lock.get("pattern") or ""
+        for frag, why in PY_ONLY:
+            if frag in pat:
+                bad.append(("tokens[%d]" % i,
+                            "pattern uses %s: %s" % (frag, why)))
+        try:
+            re.compile(pat)
+        except re.error as err:
+            bad.append(("tokens[%d]" % i, "pattern does not compile: %s" % err))
+
+    if bad:
+        print("FAIL  %s is not usable" % LOCKED)
+        print("")
+        for where, why in bad:
+            print("  %-12s %s" % (where, why))
+        sys.exit(1)
+
+    return spec, paths, tokens
+
+
+SPEC, LOCKED_PATHS, LOCKED_TOKENS = load_locks()
+DEV = SPEC.get("dev") or "A developer changes this through a pull request."
+UNCHANGED = SPEC.get("unchanged") or "Nothing was published and the live site is unchanged."
 
 
 def norm_path(p):
@@ -300,7 +276,7 @@ def main():
             print("      now  : %s" % (new[:110] + ("..." if len(new) > 110 else "")))
         print("")
 
-    print("Nothing was published and the live site is unchanged.")
+    print(UNCHANGED)
     print("Undo the changes listed above in the admin panel and publish again.")
     print("Everything else you edited is fine and will publish once these are")
     print("put back.")

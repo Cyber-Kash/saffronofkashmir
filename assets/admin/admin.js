@@ -39,10 +39,23 @@
   const LS_CFG = 'sokadmin.cfg';
   const LS_DRAFT = 'sokadmin.draft';
   const DATA_PATH = 'data/site-data.json';
+
+  /* The panel writes here, never to main.
+
+     main carries a ruleset requiring the `verify` status check. A commit made
+     through the API has never run CI, so a push straight at main is refused
+     and the panel reports a failure it cannot explain. That is what blocked
+     publishing for twelve days.
+
+     Pushing to `content` instead cannot be blocked: .github/workflows/
+     publish-content.yml runs every check on it and only then fast-forwards
+     main, so the live site still only ever receives checked content. */
+  const DEFAULT_BRANCH = 'content';
+  const LEGACY_BRANCH = 'main';
   const PAGE_FILES = ['index.html', 'products.html', 'recipes.html', 'blogs.html', '404.html', 'sitemap.xml'];
 
   const S = {
-    cfg: { owner: '', repo: '', branch: 'main', token: '' },
+    cfg: { owner: '', repo: '', branch: DEFAULT_BRANCH, token: '' },
     data: null,
     baseline: '',
     /* Blob sha of data/site-data.json as this panel loaded it.
@@ -245,30 +258,36 @@
   function f(label, path, o) {
     o = o || {};
     const val = getPath(S.data, path);
-    const hint = o.hint ? '<div class="hint">' + o.hint + '</div>' : '';
+    /* Regulated content is rendered read-only rather than hidden. Someone has
+       to be able to SEE the FSSAI number to check it against the certificate;
+       they just must not be the one to change it. */
+    const lock = lockedFor(path);
+    const dis = lock ? ' disabled' : '';
+    const hint = lock ? lockNoteHtml(lock) : (o.hint ? '<div class="hint">' + o.hint + '</div>' : '');
     let ctrl;
     if (o.type === 'textarea') {
-      ctrl = '<textarea data-path="' + path + '"' +
+      ctrl = '<textarea data-path="' + path + '"' + dis +
         (o.coerce ? ' data-coerce="' + o.coerce + '"' : '') +
         ' rows="' + (o.rows || 3) + '">' +
         A(o.coerce === 'lines' ? (val || []).join('\n') : (val == null ? '' : val)) +
         '</textarea>';
     } else if (o.type === 'select') {
-      ctrl = '<select data-path="' + path + '"' + (o.coerce ? ' data-coerce="' + o.coerce + '"' : '') + '>' +
+      ctrl = '<select data-path="' + path + '"' + dis + (o.coerce ? ' data-coerce="' + o.coerce + '"' : '') + '>' +
         (o.options || []).map(op =>
           '<option value="' + A(op.v) + '"' + (String(op.v) === String(val) ? ' selected' : '') + '>' +
           A(op.l) + '</option>').join('') + '</select>';
     } else if (o.type === 'checkbox') {
       return '<div class="f inline"><input type="checkbox" id="cb-' + path.replace(/\./g, '-') +
-        '" data-path="' + path + '"' + (val ? ' checked' : '') + '>' +
+        '" data-path="' + path + '"' + dis + (val ? ' checked' : '') + '>' +
         '<label for="cb-' + path.replace(/\./g, '-') + '">' + label + '</label>' + hint + '</div>';
     } else {
-      ctrl = '<input type="' + (o.type || 'text') + '" data-path="' + path + '"' +
+      ctrl = '<input type="' + (o.type || 'text') + '" data-path="' + path + '"' + dis +
         (o.coerce ? ' data-coerce="' + o.coerce + '"' : '') +
         ' value="' + A(val == null ? '' : val) + '"' +
         (o.placeholder ? ' placeholder="' + A(o.placeholder) + '"' : '') + '>';
     }
-    return '<div class="f"><label>' + label + '</label>' + ctrl + hint + '</div>';
+    return '<div class="f' + (lock ? ' locked' : '') + '"><label>' + label +
+      (lock ? ' <span class="lock-tag">locked</span>' : '') + '</label>' + ctrl + hint + '</div>';
   }
 
   function num(label, path, o) {
@@ -295,6 +314,813 @@
   }
 
   const MD_HINT = 'Supports links and emphasis: <code>[text](page.html)</code>, <code>[text](wa:Your WhatsApp message)</code>, <code>**bold**</code>, <code>*italic*</code>.';
+
+  /* ================= the publish gate =================
+
+     Seven checks plus the lock list, run in this browser before anything is
+     written to GitHub. The same checks run again in the workflow after the
+     push, from a clean checkout, because a check that lives inside the thing
+     being checked is advisory. This copy exists so that a defect is caught
+     where the person can still fix it, in the editor, instead of arriving as
+     an issue ten minutes later.
+
+     Which checks these are, and why these seven: they are every tools/ check
+     whose input the panel already holds in memory. The two that are missing
+     cannot run here for reasons, not by omission.
+
+       output drift   the panel IS the builder, so its output matches its own
+                      data by construction. It can never detect that its own
+                      templates are stale. That is what the build id guard is
+                      for, and it runs separately.
+       check_locked   the panel is the actor being checked. The enforcing copy
+                      must live where the person publishing cannot skip it.
+                      The copy below is the courtesy warning, not the lock.
+
+     NEITHER LIST IS DUPLICATED HERE. tools/figures.json and tools/locked.json
+     are read at run time and Python reads the same two files. Writing the
+     figures or the locks out again in JavaScript would put two copies in the
+     repo that drift apart, which hard rule 9 in CLAUDE.md forbids.
+
+     EVERY CHECK ASSERTS IT EXAMINED SOMETHING. Hard rule 8: "found zero
+     problems" and "found zero things to examine" must not produce the same
+     output. A check that examined nothing is reported as a failure, not a
+     pass, because that is the state every broken guard in this repo was in.
+
+     EVERY REFUSAL NAMES four things: what was touched, why it is locked or
+     wrong, who changes it, and that the live site has not moved. The wording
+     comes from tools/locked.json so the panel and the workflow say the same
+     sentences. A refusal that only says no teaches nothing, and someone
+     blocked from writing "ISO 3632 certified" who is not told the approved
+     form writes "internationally certified quality" instead, which is a
+     vaguer false claim rather than a precise one. */
+
+  const GATE_FILES = { locked: 'tools/locked.json', figures: 'tools/figures.json' };
+  let GATE_SPEC = null;
+
+  /* Fail CLOSED, unlike the build id and data guards above.
+
+     Those fail open because a network blip is not evidence of staleness. This
+     is different: without the two spec files the panel cannot tell whether
+     regulated content changed, which is a known unknown rather than a blip,
+     and the workflow would refuse the push anyway. Refusing here costs one
+     reload; refusing there costs a push, an issue and a wait. */
+  async function gateSpecs() {
+    if (GATE_SPEC) return GATE_SPEC;
+    const out = {};
+    for (const key of Object.keys(GATE_FILES)) {
+      const rel = GATE_FILES[key];
+      let res;
+      try {
+        res = await fetch(rel + '?cb=' + Date.now(), { cache: 'no-store' });
+      } catch (err) {
+        throw new Error('could not read ' + rel + ' (' + err.message + ')');
+      }
+      if (!res.ok) throw new Error(rel + ' returned HTTP ' + res.status);
+      try { out[key] = await res.json(); }
+      catch (err) { throw new Error(rel + ' did not parse as JSON'); }
+    }
+    const nLocks = (out.locked.paths || []).length + (out.locked.tokens || []).length;
+    if (!nLocks) throw new Error(GATE_FILES.locked + ' defines no locks at all');
+    if (!(out.figures.figures || []).length)
+      throw new Error(GATE_FILES.figures + ' defines no figures at all');
+    GATE_SPEC = out;
+    return GATE_SPEC;
+  }
+
+  function gateDev() {
+    return (GATE_SPEC && GATE_SPEC.locked.dev) || 'A developer changes this through a pull request.';
+  }
+  function gateUnchanged() {
+    return (GATE_SPEC && GATE_SPEC.locked.unchanged) ||
+      'Nothing was published and the live site is unchanged.';
+  }
+
+  /* ---------- paths ----------
+     The panel addresses fields as products.0.specs.1.value. check_locked.py
+     addresses the same value as products[].specs[].value, and keeps post ids
+     rather than indexes so a lock on one article's body does not become a
+     lock on every article's body. These convert between the two. */
+
+  function normIndexes(p) { return String(p).replace(/\[\d+\]/g, '[]'); }
+
+  function canonicalPath(dotPath, data) {
+    const parts = String(dotPath).split('.');
+    let node = data || S.data;
+    let out = '';
+    for (let i = 0; i < parts.length; i++) {
+      const k = parts[i];
+      const isIdx = /^\d+$/.test(k);
+      if (isIdx) {
+        if (out === 'posts') {
+          const item = node ? node[Number(k)] : null;
+          out = 'posts[' + ((item && item.id) || '?') + ']';
+        } else {
+          out += '[]';
+        }
+      } else {
+        out = out ? out + '.' + k : k;
+      }
+      node = node == null ? null : node[isIdx ? Number(k) : k];
+    }
+    return normIndexes(out);
+  }
+
+  function lockMatches(canon, match) {
+    return canon === match ||
+           canon.indexOf(match + '.') === 0 ||
+           canon.indexOf(match + '[') === 0;
+  }
+
+  /* The lock covering a panel field path, or null. Used both to render the
+     field read-only and to refuse a publish that changed it. */
+  function lockedFor(dotPath, data) {
+    if (!GATE_SPEC) return null;
+    const canon = canonicalPath(dotPath, data);
+    const paths = GATE_SPEC.locked.paths || [];
+    for (let i = 0; i < paths.length; i++) {
+      if (lockMatches(canon, paths[i].match)) return paths[i];
+    }
+    return null;
+  }
+
+  function lockNoteHtml(lock) {
+    return '<div class="hint lock-note">🔒 <strong>' + A(lock.what) +
+      '.</strong> ' + A(lock.why) + ' ' + A(gateDev()) + '</div>';
+  }
+
+  /* leaf values, keyed the way check_locked.py keys them */
+  function flattenData(node, path, out) {
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) flattenData(node[i], path + '[' + i + ']', out);
+    } else if (node && typeof node === 'object') {
+      const keys = Object.keys(node);
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i], v = node[k];
+        if (k === 'posts' && Array.isArray(v)) {
+          for (let j = 0; j < v.length; j++) {
+            flattenData(v[j], 'posts[' + ((v[j] && v[j].id) || '?') + ']', out);
+          }
+          continue;
+        }
+        flattenData(v, path ? path + '.' + k : k, out);
+      }
+    } else {
+      out[path] = node;
+    }
+  }
+
+  /* strings only, keyed the way check_figures.py keys them */
+  function walkStrings(node, path, out) {
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) walkStrings(node[i], path + '[' + i + ']', out);
+    } else if (node && typeof node === 'object') {
+      const keys = Object.keys(node);
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i], v = node[k];
+        if (k === 'posts' && Array.isArray(v)) {
+          for (let j = 0; j < v.length; j++) {
+            walkStrings(v[j], 'posts[' + ((v[j] && v[j].id) || '?') + ']', out);
+          }
+          continue;
+        }
+        walkStrings(v, path ? path + '.' + k : k, out);
+      }
+    } else if (typeof node === 'string') {
+      out[path] = node;
+    }
+  }
+
+  function clip(v, n) {
+    if (typeof v !== 'string') return v == null ? '(empty)' : String(v);
+    return v.length > (n || 110) ? v.slice(0, n || 110) + '...' : v;
+  }
+
+  /* An item's display name. recipes[] has no `title`: it uses `name` for the
+     card and `schemaName` for structured data. Reading the wrong key here
+     produced "undefined" in a refusal message, which is exactly the kind of
+     junk value check 1 exists to catch. */
+  function itemLabel(kind, item, idx) {
+    if (!item) return kind + ' ' + idx;
+    if (kind === 'recipes') return item.name || item.schemaName || ('recipe ' + idx);
+    if (kind === 'posts') return item.title || item.id || ('article ' + idx);
+    if (kind === 'products') {
+      try { return SOKTemplates.productView(item).name; }
+      catch (e) { return item.baseName || ('product ' + idx); }
+    }
+    return item.title || item.name || item.id || (kind + ' ' + idx);
+  }
+
+  /* ---------- the checks ----------
+     Each returns { id, name, examined, unit, findings }. findings is a list of
+     { where, what, why, todo, who, was, now }; every field optional except
+     where and what. */
+
+  const JUNK_TOKENS = ['[object Object]', '-Infinity', 'Infinity', 'NaN', 'undefined', 'null'];
+  const RX_SCRIPT_STYLE = /<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
+  const RX_LD = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const CHECKER_SIGNALS = ['indicator', 'nothing', 'inconclusive'];
+  const OUTCOME_KEYS = ['indicator', 'nothing', 'inconclusive'];
+
+  function blankKeepingLines(s) { return s.replace(/[^\n]/g, ' '); }
+
+  function walkJsonValues(node, path, hit) {
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) walkJsonValues(node[i], path + '[' + i + ']', hit);
+    } else if (node && typeof node === 'object') {
+      const keys = Object.keys(node);
+      for (let i = 0; i < keys.length; i++) walkJsonValues(node[keys[i]], path + '.' + keys[i], hit);
+    } else if (typeof node === 'string') {
+      if (JUNK_TOKENS.indexOf(node.trim()) !== -1) hit(path.replace(/^\./, ''), node.trim());
+    }
+  }
+
+  /* 1. junk values anywhere in the finished pages */
+  function checkJunk(files) {
+    const findings = [];
+    const names = Object.keys(files);
+    names.forEach(function (rel) {
+      const raw = files[rel];
+      if (/\.html$/.test(rel)) {
+        RX_LD.lastIndex = 0;
+        let m;
+        while ((m = RX_LD.exec(raw)) !== null) {
+          try {
+            walkJsonValues(JSON.parse(m[1].trim()), '', function (p, tok) {
+              findings.push({ where: rel + '  ' + p, what: 'the value is the word "' + tok + '"' });
+            });
+          } catch (err) { /* check 2 reports unparseable blocks */ }
+        }
+        RX_SCRIPT_STYLE.lastIndex = 0;
+        scanLines(rel, raw.replace(RX_SCRIPT_STYLE, blankKeepingLines), findings);
+      } else if (/\.json$/.test(rel)) {
+        try {
+          walkJsonValues(JSON.parse(raw), '', function (p, tok) {
+            findings.push({ where: rel + '  ' + p, what: 'the value is the word "' + tok + '"' });
+          });
+        } catch (err) {
+          findings.push({ where: rel, what: 'the file is not valid JSON (' + err.message + ')' });
+        }
+      } else {
+        scanLines(rel, raw, findings);
+      }
+    });
+    return {
+      id: 'junk', name: 'Broken values in the finished pages',
+      examined: names.length, unit: 'page', findings: findings
+    };
+  }
+
+  function scanLines(rel, text, findings) {
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      for (let t = 0; t < JUNK_TOKENS.length; t++) {
+        const col = lines[i].indexOf(JUNK_TOKENS[t]);
+        if (col === -1) continue;
+        findings.push({
+          where: rel + '  line ' + (i + 1),
+          what: 'the page shows the word "' + JUNK_TOKENS[t] + '" where a value should be',
+          why: 'That is what a missing or miscalculated value looks like once it reaches a page. ' +
+               'It is visible to customers and to Google.',
+          now: lines[i].slice(Math.max(0, col - 45), col + JUNK_TOKENS[t].length + 45).trim()
+        });
+        break;
+      }
+    }
+  }
+
+  /* 2. Google structured data parses */
+  function checkJsonLd(files) {
+    const findings = [];
+    let blocks = 0, without = [];
+    Object.keys(files).forEach(function (rel) {
+      if (!/\.html$/.test(rel)) return;
+      RX_LD.lastIndex = 0;
+      let m, n = 0;
+      while ((m = RX_LD.exec(files[rel])) !== null) {
+        n++; blocks++;
+        try { JSON.parse(m[1].trim()); }
+        catch (err) {
+          findings.push({
+            where: rel + '  structured data block ' + n,
+            what: 'the block Google reads is not valid (' + err.message + ')',
+            why: 'Google drops the whole block, so the page loses its rich result.'
+          });
+        }
+      }
+      if (!n) without.push(rel);
+    });
+    return {
+      id: 'jsonld', name: 'Google structured data',
+      examined: blocks, unit: 'structured data block', findings: findings,
+      note: without.length ? without.length + ' page(s) carry none, which is expected for 404' : ''
+    };
+  }
+
+  /* 3. a product id matches its own web address */
+  function checkProductIds(files) {
+    const findings = [];
+    let pages = 0;
+    Object.keys(files).forEach(function (rel) {
+      const mm = rel.match(/^products\/([^/]+)\/index\.html$/);
+      if (!mm) return;
+      pages++;
+      const slug = mm[1], raw = files[rel];
+      let sku = null;
+      RX_LD.lastIndex = 0;
+      let m;
+      while ((m = RX_LD.exec(raw)) !== null) {
+        let node;
+        try { node = JSON.parse(m[1].trim()); } catch (err) { continue; }
+        const graph = (node && node['@graph']) || (Array.isArray(node) ? node : [node]);
+        (graph || []).forEach(function (g) {
+          if (g && g['@type'] === 'Product' && g.sku != null) sku = String(g.sku);
+        });
+      }
+      if (sku !== null && sku !== slug) {
+        findings.push({
+          where: '/products/' + slug + '/',
+          what: 'the product code sent to Google is "' + sku + '" but the web address says "' + slug + '"',
+          why: 'The code and the address are both built from the product id. When they disagree, ' +
+               'Google Shopping and the sales reports are keyed on different things.',
+          todo: 'Fix the product id in Products so it matches the web address.'
+        });
+      }
+      const wa = raw.match(/data-wa-product="([^"]*)"/g) || [];
+      wa.forEach(function (a) {
+        const v = a.slice('data-wa-product="'.length, -1);
+        if (v !== slug) {
+          findings.push({
+            where: '/products/' + slug + '/',
+            what: 'an order button reports "' + v + '" but the web address says "' + slug + '"',
+            why: 'Order tracking is keyed on that value, so the sales report will not join up.'
+          });
+        }
+      });
+      const canon = raw.match(/<link[^>]+rel="canonical"[^>]+href="([^"]*)"/);
+      if (canon) {
+        const seg = canon[1].replace(/\/+$/, '').split('/').pop();
+        if (seg !== slug) {
+          findings.push({
+            where: '/products/' + slug + '/',
+            what: 'the page tells Google its address ends in "' + seg + '" but it is at "' + slug + '"'
+          });
+        }
+      }
+    });
+    return {
+      id: 'productids', name: 'Product codes and web addresses',
+      examined: pages, unit: 'product page', findings: findings
+    };
+  }
+
+  /* 4. every "More from the blog" link goes somewhere real */
+  function checkRelated(data) {
+    const findings = [];
+    const posts = data.posts || [];
+    const byId = {}, drafts = {};
+    posts.forEach(function (p) { if (p && p.id) { byId[p.id] = p; if (p.draft) drafts[p.id] = 1; } });
+    let refs = 0;
+    posts.forEach(function (p, i) {
+      const list = p && p.related;
+      if (!Array.isArray(list)) return;
+      list.forEach(function (ref) {
+        refs++;
+        const label = itemLabel('posts', p, i);
+        if (ref === p.id) {
+          findings.push({ where: '"' + label + '"', what: 'it links to itself under More from the blog',
+                          todo: 'Remove its own name from the related list.' });
+        } else if (!byId[ref]) {
+          findings.push({ where: '"' + label + '"',
+                          what: 'it links to an article called "' + ref + '" that does not exist',
+                          why: 'Readers would hit a missing page.',
+                          todo: 'Pick a different article, or remove the link. A redirect does not fix an internal link.' });
+        } else if (drafts[ref]) {
+          findings.push({ where: '"' + label + '"',
+                          what: 'it links to "' + ref + '", which is still a draft and has no page yet',
+                          todo: 'Publish that article first, or link to a different one.' });
+        }
+      });
+    });
+    return {
+      id: 'related', name: 'More from the blog links',
+      examined: posts.length, unit: 'article', findings: findings,
+      note: refs + ' link(s) checked'
+    };
+  }
+
+  /* 5. the purity checker still quotes sentences the article contains */
+  function checkChecker(data) {
+    const findings = [];
+    const posts = data.posts || [];
+    const bodies = {}, drafts = {};
+    posts.forEach(function (p) {
+      if (!p || !p.id) return;
+      bodies[p.id] = String(p.body == null ? '' : p.body).replace(/\s+/g, ' ').trim();
+      if (p.draft) drafts[p.id] = 1;
+    });
+    const norm = function (s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); };
+    let anchors = 0, checkers = 0;
+
+    posts.forEach(function (post, pi) {
+      const checker = post && post.checker;
+      if (!checker) return;
+      checkers++;
+      const host = post.id || '?';
+      const label = itemLabel('posts', post, pi);
+
+      const anchored = function (where, entry) {
+        let target = host, anchor = entry;
+        if (entry && typeof entry === 'object') { target = entry.anchorPost || host; anchor = entry.anchor; }
+        if (!norm(anchor)) {
+          findings.push({ where: where, what: 'it states something with no sentence behind it',
+                          why: 'Every line the checker shows has to be traceable to a published sentence.',
+                          todo: 'Ask a developer.', who: gateDev() });
+          return;
+        }
+        if (!(target in bodies)) {
+          findings.push({ where: where, what: 'it quotes an article "' + target + '" that does not exist',
+                          todo: 'Ask a developer.', who: gateDev() });
+          return;
+        }
+        if (drafts[target]) {
+          findings.push({ where: where, what: 'it quotes "' + target + '", which is still a draft and has no page',
+                          todo: 'Ask a developer.', who: gateDev() });
+          return;
+        }
+        anchors++;
+        if (bodies[target].indexOf(norm(anchor)) === -1) {
+          findings.push({
+            where: where,
+            what: 'it quotes a sentence that is no longer in "' + target + '"',
+            why: 'The checker tells readers what a result means by pointing at the article. ' +
+                 'Editing the article out from under it leaves a claim with nothing behind it.',
+            todo: 'Put the sentence back, or ask a developer to re-anchor the checker.',
+            who: gateDev(),
+            now: norm(anchor).slice(0, 90)
+          });
+        }
+      };
+
+      if (post.draft) {
+        findings.push({ where: '"' + label + '"', what: 'the purity checker sits on a draft, so it has no page' });
+      }
+      const after = norm(checker.afterSection);
+      if (!after) {
+        findings.push({ where: '"' + label + '"', what: 'the checker does not say which section it goes after' });
+      } else if (norm(post.body).indexOf('## ' + after) === -1) {
+        findings.push({
+          where: '"' + label + '"',
+          what: 'the checker is placed after a section called "' + after + '" that the article no longer has',
+          why: 'It would silently move to the end of the article instead.',
+          todo: 'Restore that sub-heading, or ask a developer to move the checker.', who: gateDev()
+        });
+      }
+      const questions = checker.questions || [];
+      if (!questions.length) {
+        findings.push({ where: '"' + label + '"', what: 'the checker has no questions, so it examines nothing' });
+      }
+      questions.forEach(function (q, qi) {
+        const where = '"' + label + '" question ' + (qi + 1);
+        (q.options || []).forEach(function (o, oi) {
+          const wo = where + ', answer ' + (oi + 1);
+          const sig = o.signal;
+          if (typeof sig === 'number' || typeof sig === 'boolean') {
+            findings.push({ where: wo, what: 'the answer carries a score (' + sig + ')',
+                            why: 'The checker states an outcome, never a score. A number reads as a measurement we did not take.',
+                            todo: 'Ask a developer.', who: gateDev() });
+          } else if (CHECKER_SIGNALS.indexOf(sig) === -1) {
+            findings.push({ where: wo, what: 'the answer means "' + sig + '", which is not one of ' + CHECKER_SIGNALS.join(', ') });
+          }
+          if (!norm(o.because)) {
+            findings.push({ where: wo, what: 'the answer shows no reasoning' });
+          }
+          anchored(wo, o);
+        });
+      });
+      ['notes', 'cannotSee'].forEach(function (key) {
+        const entries = checker[key] || [];
+        if (key === 'cannotSee' && !entries.length) {
+          findings.push({ where: '"' + label + '"',
+                          what: 'the list of what home testing cannot detect is empty, and that list is the point of the feature' });
+        }
+        entries.forEach(function (en, ei) {
+          anchored('"' + label + '" ' + key + ' ' + (ei + 1), en);
+        });
+      });
+      const outcomes = checker.outcomes || {};
+      OUTCOME_KEYS.forEach(function (k) {
+        const oc = outcomes[k];
+        if (!oc) { findings.push({ where: '"' + label + '" outcome "' + k + '"', what: 'it is missing' }); return; }
+        ['heading', 'body'].forEach(function (fl) {
+          if (!norm(oc[fl])) findings.push({ where: '"' + label + '" outcome "' + k + '"', what: 'its ' + fl + ' is empty' });
+        });
+      });
+      Object.keys(outcomes).forEach(function (k) {
+        if (OUTCOME_KEYS.indexOf(k) === -1) {
+          findings.push({ where: '"' + label + '" outcome "' + k + '"',
+                          what: 'it is not one of ' + OUTCOME_KEYS.join(', ') });
+        }
+      });
+    });
+
+    return {
+      id: 'checker', name: 'Purity checker',
+      examined: anchors, unit: 'quoted sentence', findings: findings,
+      note: checkers + ' checker(s)'
+    };
+  }
+
+  /* 6. figures that must agree everywhere they are stated */
+  function checkFigures(data) {
+    const findings = [];
+    const figs = (GATE_SPEC.figures.figures) || [];
+    const strings = {};
+    walkStrings(data, '', strings);
+    const paths = Object.keys(strings);
+    let examined = 0;
+
+    figs.forEach(function (fig) {
+      (fig.patterns || []).forEach(function (pat) {
+        let rx;
+        try { rx = new RegExp(pat, 'g'); }
+        catch (err) {
+          findings.push({ where: 'tools/figures.json  ' + fig.name,
+                          what: 'a pattern does not work in this browser (' + err.message + ')',
+                          todo: 'Ask a developer.', who: gateDev() });
+          return;
+        }
+        paths.forEach(function (p) {
+          const text = strings[p];
+          let m;
+          rx.lastIndex = 0;
+          while ((m = rx.exec(text)) !== null) {
+            if (m[0] === '') { rx.lastIndex++; continue; }
+            for (let gi = 1; gi < m.length; gi++) {
+              const v = m[gi];
+              if (v === undefined) continue;
+              examined++;
+              if ((fig.accepted || []).indexOf(v) === -1) {
+                findings.push({
+                  where: p,
+                  what: 'it gives ' + fig.name + ' as "' + v + '", where the rest of the site says "' +
+                        (fig.accepted || []).join('" or "') + '"',
+                  why: 'The whole argument on this site is that other people\'s figures do not add up. ' +
+                       'Two different values for the same figure is the thing we criticise.',
+                  todo: 'Decide which value is right and correct the other place, rather than leaving both.',
+                  now: m[0]
+                });
+              }
+            }
+          }
+        });
+      });
+    });
+
+    return {
+      id: 'figures', name: 'Figures that must agree',
+      examined: examined, unit: 'stated figure', findings: findings,
+      note: figs.length + ' tracked figure(s) across ' + paths.length + ' pieces of text'
+    };
+  }
+
+  /* 7. parity: what visible text is about to change, and did the site shrink
+
+     Parity has no failure of its own: it reports differences, and a difference
+     is usually the whole point of publishing. Two things about it ARE failures
+     and both are the 29 Aug 2026 incident, where three publishes silently
+     reverted 14 pages and sitemap.xml fell from 27 URLs to 11:
+
+       a page that no longer renders at all
+       fewer pages than before
+
+     Everything else is reported for review rather than refused. */
+  function checkParity(files, baselineData) {
+    const findings = [];
+    let before = null, beforeErr = null;
+    try { before = SOKTemplates.renderAll(baselineData); }
+    catch (err) { beforeErr = err; }
+
+    if (beforeErr) {
+      return {
+        id: 'parity', name: 'Visible text review', examined: 0, unit: 'page',
+        findings: [{ where: 'the version you started from',
+                     what: 'it could not be rebuilt, so there is nothing to compare against (' + beforeErr.message + ')',
+                     todo: 'Reload the panel (Ctrl+Shift+R) and try again.' }]
+      };
+    }
+
+    const beforeNames = Object.keys(before), afterNames = Object.keys(files);
+    const gone = beforeNames.filter(function (n) { return afterNames.indexOf(n) === -1; });
+    if (gone.length) {
+      findings.push({
+        where: gone.slice(0, 8).join(', ') + (gone.length > 8 ? ' and ' + (gone.length - 8) + ' more' : ''),
+        what: gone.length + ' page(s) that exist today would stop existing',
+        why: 'This is exactly what happened on 29 August 2026: a publish regenerated the site with ' +
+             'fewer pages and every blog and policy page was orphaned for a day.',
+        todo: 'Reload the panel (Ctrl+Shift+R) and check nothing was deleted by accident.'
+      });
+    }
+
+    const changed = [];
+    afterNames.forEach(function (n) {
+      if (!/\.(html|xml|txt)$/.test(n)) return;
+      const b = before[n];
+      if (b === undefined) { changed.push({ page: n, kind: 'new' }); return; }
+      const bt = visibleText(b), at = visibleText(files[n]);
+      if (bt !== at) changed.push({ page: n, kind: 'changed', before: bt, after: at });
+    });
+
+    return {
+      id: 'parity', name: 'Visible text review',
+      examined: afterNames.length, unit: 'page', findings: findings,
+      review: changed,
+      note: changed.length
+        ? changed.length + ' page(s) change visible text'
+        : 'no visible text changes'
+    };
+  }
+
+  function visibleText(html) {
+    return String(html)
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /* the lock list, rules 1 to 9 of tools/locked.json */
+  function checkLockedContent(data, baselineData) {
+    const findings = [];
+    const spec = GATE_SPEC.locked;
+    const b = {}, a = {};
+    flattenData(baselineData, '', b);
+    flattenData(data, '', a);
+
+    const seen = {}, keys = [];
+    Object.keys(b).concat(Object.keys(a)).forEach(function (k) {
+      if (!seen[k]) { seen[k] = 1; keys.push(k); }
+    });
+    keys.sort();
+
+    const changed = keys.filter(function (k) { return b[k] !== a[k]; });
+
+    changed.forEach(function (key) {
+      const canon = normIndexes(key);
+      let hit = null;
+      (spec.paths || []).forEach(function (lock) { if (!hit && lockMatches(canon, lock.match)) hit = lock; });
+      if (hit) {
+        findings.push({
+          where: key, what: 'you changed ' + hit.what, why: hit.why,
+          who: gateDev(), was: clip(b[key]), now: clip(a[key])
+        });
+        return;
+      }
+      (spec.tokens || []).forEach(function (lock) {
+        let rx;
+        try { rx = new RegExp(lock.pattern); } catch (err) { return; }
+        const inOld = typeof b[key] === 'string' && rx.test(b[key]);
+        rx.lastIndex = 0;
+        const inNew = typeof a[key] === 'string' && rx.test(a[key]);
+        if (inOld || inNew) {
+          findings.push({
+            where: key, what: 'you changed text containing ' + lock.what, why: lock.why,
+            todo: lock.instead, who: gateDev(), was: clip(b[key]), now: clip(a[key])
+          });
+        }
+      });
+    });
+
+    return {
+      id: 'locked', name: 'Regulated content',
+      examined: keys.length, unit: 'value', findings: findings,
+      note: changed.length + ' value(s) changed'
+    };
+  }
+
+  /* ---------- runner ---------- */
+
+  async function runGate(data, baselineData) {
+    let specErr = null;
+    try { await gateSpecs(); } catch (err) { specErr = err; }
+    if (specErr) {
+      return {
+        ok: false, blocked: true,
+        checks: [{
+          id: 'specs', name: 'The rules this panel checks against', examined: 0, unit: 'rule file',
+          findings: [{
+            where: 'tools/locked.json and tools/figures.json',
+            what: 'they could not be read, so the panel cannot tell whether regulated content changed (' +
+                  specErr.message + ')',
+            why: 'These two files say which content is locked and which figures must agree. ' +
+                 'Without them this check would pass everything, which is worse than refusing.',
+            todo: 'Reload the panel (Ctrl+Shift+R). If it keeps happening, send this message to a developer.',
+            who: gateDev()
+          }]
+        }]
+      };
+    }
+
+    let files = null, renderErr = null;
+    try { files = SOKTemplates.renderAll(data); }
+    catch (err) { renderErr = err; }
+    if (renderErr) {
+      return {
+        ok: false, blocked: true,
+        checks: [{
+          id: 'render', name: 'Building the pages', examined: 0, unit: 'page',
+          findings: [{
+            where: 'the whole site',
+            what: 'the pages could not be built from your content (' + renderErr.message + ')',
+            why: 'Nothing can be checked or published until the pages build.',
+            todo: 'Undo your last edit and try again. If it persists, send this message to a developer.',
+            who: gateDev()
+          }]
+        }]
+      };
+    }
+
+    const checks = [
+      checkJunk(files),
+      checkJsonLd(files),
+      checkProductIds(files),
+      checkRelated(data),
+      checkChecker(data),
+      checkFigures(data),
+      checkParity(files, baselineData),
+      checkLockedContent(data, baselineData)
+    ];
+
+    /* Hard rule 8. A check that looked at nothing is a failure, not a pass:
+       every broken guard this repo has found was in exactly that state, and
+       reported success. */
+    checks.forEach(function (c) {
+      if (c.examined > 0) return;
+      c.findings = c.findings.concat([{
+        where: c.name,
+        what: 'this check examined no ' + c.unit + ' at all, so it proves nothing',
+        why: 'A check that looks at nothing and a check that finds nothing must not ' +
+             'report the same result. Every guard in this project that was only ever ' +
+             'seen green had already stopped working.',
+        todo: 'Reload the panel (Ctrl+Shift+R). If it persists, send this message to a developer.',
+        who: gateDev()
+      }]);
+      c.starved = true;
+    });
+
+    const failed = checks.filter(function (c) { return c.findings.length; });
+    return { ok: !failed.length, blocked: !!failed.length, checks: checks, failed: failed };
+  }
+
+  /* The refusal, as plain text. Each entry names what was touched, why, who
+     changes it, and that the live site has not moved. */
+  function gateRefusalHtml(result) {
+    const parts = [];
+    parts.push('<p><strong>Not published. The live site has not changed.</strong></p>');
+    parts.push('<p>Everything you edited is still here. Fix the points below and press Publish again.</p>');
+    (result.failed || result.checks.filter(function (c) { return c.findings.length; })).forEach(function (c) {
+      parts.push('<p style="margin:14px 0 4px;"><strong>' + A(c.name) + '</strong></p>');
+      c.findings.slice(0, 12).forEach(function (fd) {
+        const rows = [];
+        rows.push('<div><code>' + A(fd.where) + '</code></div>');
+        rows.push('<div>' + A(fd.what) + '</div>');
+        if (fd.why) rows.push('<div style="color:#6b5c48;">' + A(fd.why) + '</div>');
+        if (fd.todo) rows.push('<div><strong>What to do:</strong> ' + A(fd.todo) + '</div>');
+        if (fd.who) rows.push('<div style="color:#6b5c48;">' + A(fd.who) + '</div>');
+        if (fd.was !== undefined && fd.now !== undefined) {
+          rows.push('<div style="color:#6b5c48;">was: ' + A(String(fd.was)) + '</div>');
+          rows.push('<div style="color:#6b5c48;">now: ' + A(String(fd.now)) + '</div>');
+        } else if (fd.now !== undefined) {
+          rows.push('<div style="color:#6b5c48;">' + A(String(fd.now)) + '</div>');
+        }
+        parts.push('<div style="margin:0 0 10px;padding:8px 10px;border-left:3px solid #c0392b;background:#fff5f4;">' +
+          rows.join('') + '</div>');
+      });
+      if (c.findings.length > 12) {
+        parts.push('<p style="color:#6b5c48;">and ' + (c.findings.length - 12) + ' more of the same kind.</p>');
+      }
+    });
+    parts.push('<p>' + A(gateUnchanged()) + '</p>');
+    return parts.join('');
+  }
+
+  /* Exposed so the gate can be exercised against real data outside the publish
+     button. tools/prove_gate.js drives this in a real browser: every check is
+     watched refusing on its own fault and passing on untouched data. */
+  window.SOKGate = {
+    run: runGate,
+    specs: gateSpecs,
+    lockedFor: lockedFor,
+    canonicalPath: canonicalPath,
+    refusalHtml: gateRefusalHtml,
+    /* the upload rules, exposed for the same reason: a rule about which file
+       names may overwrite what is in the repository root is worth watching
+       refuse, not worth reasoning about */
+    imageNameProblem: function (name, file) { return imageNameProblem(name, file); },
+    isImageName: function (name) { return isImageName(name); },
+    sanitiseUploadName: function (n) {
+      return String(n).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9._-]/g, '');
+    }
+  };
 
   /* ---------- generic list editors ---------- */
 
@@ -358,6 +1184,7 @@
   function listEditor(listPath, kind, bodyFn, addLabel) {
     const arr = getPath(S.data, listPath) || [];
     const K = KINDS[kind];
+    const lock = lockedFor(listPath);
     const items = arr.map((it, i) => {
       const open = !!it._open;
       const sub = K.sub(it);
@@ -365,15 +1192,17 @@
         '<div class="item-head" data-action="toggle" data-list="' + listPath + '" data-idx="' + i + '">' +
         '<span>' + (open ? '▾' : '▸') + '</span>' +
         '<span class="ttl">' + A(K.label(it)) + (sub ? ' <span class="sub">— ' + A(sub) + '</span>' : '') + '</span>' +
-        '<span class="ctrl">' +
+        (lock ? '<span class="ctrl"><span class="lock-tag">locked</span></span>'
+              : '<span class="ctrl">' +
         '<button type="button" title="Move up" data-action="up" data-list="' + listPath + '" data-idx="' + i + '">↑</button>' +
         '<button type="button" title="Move down" data-action="down" data-list="' + listPath + '" data-idx="' + i + '">↓</button>' +
         '<button type="button" title="Duplicate" data-action="dup" data-list="' + listPath + '" data-idx="' + i + '">⧉</button>' +
         '<button type="button" class="del" title="Delete" data-action="del" data-list="' + listPath + '" data-idx="' + i + '">✕</button>' +
-        '</span></div>' +
+        '</span>') + '</div>' +
         (open ? '<div class="item-body">' + bodyFn(listPath + '.' + i, it, i) + '</div>' : '') +
         '</div>';
     }).join('');
+    if (lock) return lockNoteHtml(lock) + '<div class="items">' + items + '</div>';
     return '<div class="items">' + items + '</div>' +
       '<div class="add-row"><button class="btn btn-outline btn-sm" type="button" data-action="add" data-list="' +
       listPath + '" data-kind="' + kind + '">+ ' + (addLabel || 'Add item') + '</button></div>';
@@ -382,6 +1211,8 @@
   /* compact rows for tiny pair-lists (specs, filters, links, categories) */
   function rowsEditor(listPath, fields, addLabel, defaults) {
     const arr = getPath(S.data, listPath) || [];
+    const lock = lockedFor(listPath);
+    const dis = lock ? ' disabled' : '';
     const head = '<div style="display:grid;grid-template-columns:' +
       fields.map(fl => fl.w || '1fr').join(' ') + ' 30px;gap:8px;font-size:12px;color:#8d7c63;margin:8px 0 2px;">' +
       fields.map(fl => '<span>' + fl.label + '</span>').join('') + '<span></span></div>';
@@ -389,12 +1220,14 @@
       '<div style="display:grid;grid-template-columns:' + fields.map(fl => fl.w || '1fr').join(' ') +
       ' 30px;gap:8px;margin:5px 0;align-items:center;">' +
       fields.map(fl =>
-        '<input data-path="' + listPath + '.' + i + '.' + fl.key + '" value="' +
+        '<input data-path="' + listPath + '.' + i + '.' + fl.key + '"' + dis + ' value="' +
         A(it[fl.key] == null ? '' : it[fl.key]) + '"' +
         (fl.placeholder ? ' placeholder="' + A(fl.placeholder) + '"' : '') + '>').join('') +
-      '<button type="button" class="btn-ghost" title="Remove" data-action="row-del" data-list="' + listPath +
-      '" data-idx="' + i + '">✕</button></div>'
+      (lock ? '<span></span>'
+            : '<button type="button" class="btn-ghost" title="Remove" data-action="row-del" data-list="' + listPath +
+              '" data-idx="' + i + '">✕</button>') + '</div>'
     ).join('');
+    if (lock) return lockNoteHtml(lock) + head + rows;
     return head + rows +
       '<div class="add-row"><button class="btn btn-outline btn-sm" type="button" data-action="row-add" data-list="' +
       listPath + '" data-defaults="' + A(JSON.stringify(defaults)) + '">+ ' + addLabel + '</button></div>';
@@ -1023,6 +1856,16 @@
   document.addEventListener('input', e => {
     const el = e.target;
     if (!el.dataset || !el.dataset.path || S.data == null) return;
+    /* Second line. `disabled` is a rendering decision and a rendering decision
+       can be undone from the browser console in four seconds. This refuses the
+       write itself. Neither is the enforcing copy: tools/check_locked.py is,
+       and it runs after the push where nobody can reach it. */
+    const wlock = lockedFor(el.dataset.path);
+    if (wlock) {
+      toast('Locked: ' + wlock.what + '. ' + gateDev(), 7000);
+      rerender();
+      return;
+    }
     setPath(S.data, el.dataset.path, coerce(el));
     if (el.dataset.img !== undefined) {
       const th = $('[data-thumb-for="' + el.dataset.path + '"]');
@@ -1073,6 +1916,16 @@
     const listPath = t.dataset.list;
     const idx = t.dataset.idx != null ? Number(t.dataset.idx) : null;
     const arr = listPath ? getPath(S.data, listPath) : null;
+
+    /* Adding, deleting, duplicating or reordering a locked list changes it
+       just as surely as typing in it does. */
+    if (listPath && ['add', 'del', 'dup', 'up', 'down', 'row-add', 'row-del'].indexOf(act) !== -1) {
+      const llock = lockedFor(listPath);
+      if (llock) {
+        toast('Locked: ' + llock.what + '. ' + gateDev(), 7000);
+        return;
+      }
+    }
 
     switch (act) {
       case 'toggle': {
@@ -1189,7 +2042,23 @@
     if (file.size > 4 * 1024 * 1024 &&
         !confirm('This image is ' + (file.size / 1048576).toFixed(1) + ' MB. Large images slow your site down — upload anyway?')) return;
 
+    /* Uploads land in the repository ROOT, because that is where every image
+       on this site already lives and moving them would rewrite every reference
+       in the data file. The root also holds build.js, robots.txt, CNAME and
+       .nojekyll, and the old sanitiser happily produced any of those names: it
+       stripped slashes but permitted every extension, so an upload called
+       build.js offered to replace the build script and would have done it.
+
+       Nothing here can reach another directory, because the sanitiser removes
+       the slash. What it needed was a rule about WHICH root names an image may
+       take. An allow-list of image extensions is that rule, and it refuses
+       build.js, robots.txt and CNAME by construction rather than by listing
+       them. The existing-file rule below is the second line: it refuses to
+       overwrite anything in the root that is not itself an image, whatever it
+       is called. */
     const name = file.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9._-]/g, '');
+    const bad = imageNameProblem(name, file);
+    if (bad) { toast(bad, 11000); return; }
     toast('Uploading ' + name + '…', 60000);
     try {
       const b64 = await new Promise((res, rej) => {
@@ -1201,6 +2070,11 @@
       let sha = null;
       try {
         const cur = await gh(repoPath(name) + '?ref=' + encodeURIComponent(S.cfg.branch));
+        if (!isImageName(name)) {
+          toast('Not uploaded. There is already a file called "' + name + '" in the site folder and it is ' +
+                'not an image, so replacing it would break the site. Rename your image and try again.', 12000);
+          return;
+        }
         if (!confirm('“' + name + '” already exists in the repository. Replace it?')) { toast('Upload cancelled'); return; }
         sha = cur.sha;
       } catch (err) { if (err.status !== 404) throw err; }
@@ -1217,6 +2091,38 @@
       S.pendingImagePath = null;
     }
   });
+
+  /* ---------- image upload rules ---------- */
+
+  const IMAGE_EXT = ['.webp', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.avif'];
+
+  function isImageName(name) {
+    const n = String(name || '').toLowerCase();
+    for (let i = 0; i < IMAGE_EXT.length; i++) {
+      const ext = IMAGE_EXT[i];
+      if (n.length > ext.length && n.slice(-ext.length) === ext) return true;
+    }
+    return false;
+  }
+
+  /* Returns a sentence to show the user, or null when the name is fine. */
+  function imageNameProblem(name, file) {
+    if (!name || name.charAt(0) === '.') {
+      return 'Not uploaded. "' + (file && file.name ? file.name : 'that file') +
+        '" does not leave a usable file name once spaces and punctuation are removed. Rename it and try again.';
+    }
+    if (!isImageName(name)) {
+      return 'Not uploaded. "' + name + '" is not an image. This button only accepts ' +
+        IMAGE_EXT.join(', ') + ' files, because anything else would be saved into the site folder ' +
+        'alongside files the site is built from. Save your picture as a .webp or .jpg and try again.';
+    }
+    const type = file && file.type ? String(file.type) : '';
+    if (type && type.indexOf('image/') !== 0) {
+      return 'Not uploaded. "' + name + '" is named like an image but the file is a ' + type +
+        '. Save it as a real image and try again.';
+    }
+    return null;
+  }
 
   /* preview */
   function openPreview(file) {
@@ -1553,6 +2459,31 @@
       return;
     }
 
+    /* The gate. Seven checks plus the lock list, against the data as it will
+       actually be written, so underscore-prefixed view state is stripped
+       first exactly as cleanJson strips it on the way out. */
+    let gate;
+    try {
+      gate = await runGate(clone(S.data), JSON.parse(S.baseline));
+    } catch (err) {
+      gate = { ok: false, checks: [{
+        id: 'gate', name: 'The pre-publish checks', examined: 0, unit: 'check',
+        findings: [{ where: 'the panel',
+                     what: 'the checks could not run (' + err.message + ')',
+                     why: 'Publishing without them would push content nothing has looked at.',
+                     todo: 'Reload the panel (Ctrl+Shift+R) and try again.' }] }] };
+    }
+    if (!gate.ok) {
+      const gnote = $('#pub-note');
+      gnote.style.display = 'block';
+      gnote.className = 'err';
+      gnote.innerHTML = gateRefusalHtml(gate);
+      $('#pub-go').disabled = true;
+      const nfail = gate.checks.filter(function (c) { return c.findings.length; }).length;
+      toast('Not published. ' + nfail + ' check' + (nfail === 1 ? '' : 's') + ' refused. The live site is unchanged.', 10000);
+      return;
+    }
+
     publishing = true;
     $('#pub-go').disabled = true;
     $('#pub-go').textContent = 'Publishing…';
@@ -1666,6 +2597,20 @@
         'Connect with a GitHub token to publish for real.</div>' +
         '<a class="btn btn-outline btn-sm" href="admin.html">Connect</a></div>';
     }
+    if (branchWasMigrated) {
+      toast('This panel was set to publish to "' + LEGACY_BRANCH + '", which refuses every publish. ' +
+            'It now publishes to "' + DEFAULT_BRANCH + '", which is checked and then goes live automatically.', 12000);
+      branchWasMigrated = false;
+    }
+
+    /* Load the lock and figure lists, then redraw so regulated fields come
+       back read-only. Until this resolves nothing is marked locked, which is
+       why the publish gate re-reads them and refuses if they are missing. */
+    gateSpecs().then(function () { rerender(); }, function (err) {
+      console.warn('Gate specs unavailable: ' + err.message +
+        '. Regulated fields will not be marked read-only, and publishing will be refused until this is fixed.');
+    });
+
     render('home');
     updateStatus();
   }
@@ -1742,7 +2687,7 @@
     const cfg = {
       owner: $('#in-owner').value.trim(),
       repo: $('#in-repo').value.trim(),
-      branch: $('#in-branch').value.trim() || 'main',
+      branch: $('#in-branch').value.trim() || DEFAULT_BRANCH,
       token: $('#in-token').value.trim()
     };
     const errBox = $('#login-err');
@@ -1780,14 +2725,28 @@
     }
   }
 
+  let branchWasMigrated = false;
+
   function boot() {
     /* prefill from stored config or a github.io guess */
     let cfg = null;
     try { cfg = JSON.parse(localStorage.getItem(LS_CFG)); } catch (e) { /* ignore */ }
+
+    /* A config saved before the content branch existed still names main, and
+       every publish from it is refused by the ruleset with a message about a
+       status check. Migrate it rather than leaving it pointing at a branch
+       that cannot accept a publish, and say so, because a setting that
+       changes itself silently is its own surprise. */
+    if (cfg && cfg.branch === LEGACY_BRANCH) {
+      cfg.branch = DEFAULT_BRANCH;
+      try { localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch (e) { /* ignore */ }
+      branchWasMigrated = true;
+    }
+
     if (cfg) {
       $('#in-owner').value = cfg.owner || '';
       $('#in-repo').value = cfg.repo || '';
-      $('#in-branch').value = cfg.branch || 'main';
+      $('#in-branch').value = cfg.branch || DEFAULT_BRANCH;
       $('#in-token').value = cfg.token || '';
     } else if (location.hostname.endsWith('.github.io')) {
       const owner = location.hostname.split('.')[0];

@@ -1,0 +1,115 @@
+{
+  "_readme": [
+    "Content only a developer may change.",
+    "",
+    "This file is the single source. tools/check_locked.py reads it and enforces",
+    "it after a push, where the person publishing cannot skip it. The admin panel",
+    "reads it in the browser to render these fields read-only and to refuse a",
+    "publish that touches them. Duplicating the list in JavaScript would put two",
+    "copies in the repo that can drift apart, which hard rule 9 in CLAUDE.md",
+    "forbids. figures.json is shared for the same reason.",
+    "",
+    "TWO KINDS OF LOCK",
+    "  paths   a location in data/site-data.json. Everything under it is locked.",
+    "  tokens  a phrase, wherever it appears. Locked because the CLAIM is",
+    "          regulated, not the field that happens to hold it today.",
+    "",
+    "Tokens are tested against the value BEFORE and AFTER a change. Deleting a",
+    "claim matters as much as adding one.",
+    "",
+    "EVERY REFUSAL MUST TEACH. Someone blocked from writing 'ISO 3632 certified'",
+    "who is not told the approved wording will write 'internationally certified",
+    "quality' instead, which is a vaguer false claim rather than a precise one.",
+    "That outcome is worse than the one the lock prevents. Token locks therefore",
+    "carry an 'instead' giving the approved phrasing.",
+    "",
+    "PATTERNS MUST BE PORTABLE between Python re and JavaScript RegExp, because",
+    "both run them. Stay inside the common subset. tools/check_locked.py compiles",
+    "every pattern on startup and rejects Python-only syntax."
+  ],
+
+  "dev": "A developer changes this through a pull request.",
+
+  "unchanged": "Nothing was published and the live site is unchanged.",
+
+  "paths": [
+    {
+      "match": "guarantee",
+      "what": "the purity guarantee",
+      "why": "It promises a full refund plus the cost of the test within 90 days. It was reconciled against the returns policy on window, remedy and coverage, and the two contradicted each other until that was fixed."
+    },
+    {
+      "match": "policies",
+      "what": "a policy page (terms, returns, shipping or privacy)",
+      "why": "Regulatory text. The returns window, the remedy and the FSSAI registration line all live here. A policy slug also moves a live web address."
+    },
+    {
+      "match": "products[].specs",
+      "what": "a product specification row",
+      "why": "These carry the crocin figure, the ISO category, the testing laboratory and its NABL accreditation number. They are claims about a measured result, not descriptions."
+    },
+    {
+      "match": "brand.fssaiNumber",
+      "what": "the FSSAI registration number",
+      "why": "It is printed in the footer of every page as an official registration. A wrong number is a regulatory problem, not a typo."
+    },
+    {
+      "match": "posts[health-claims].body",
+      "what": "the 'Why We Do Not Make Health Claims' article",
+      "why": "It quotes FSSAI regulation 10(1) and UAE.S/FDS 2333 clause 11.1.4 verbatim. Both quotations were checked against the source documents."
+    },
+    {
+      "match": "posts[read-lab-report].body",
+      "what": "the 'How to Read a Saffron Lab Report' article",
+      "why": "It states the 190 against 200 crocin disagreement and deliberately refuses to resolve it in our favour."
+    },
+    {
+      "match": "posts[origins-compared].body",
+      "what": "the 'What Origin Actually Tells You' article",
+      "why": "It cites two published studies and the Spanish PDO specification, each verified against the source."
+    },
+    {
+      "match": "posts[purity-tests].body",
+      "what": "the 'How to Test Saffron Purity at Home' article",
+      "why": "The purity checker's reasoning is anchored to sentences in this body. Editing it breaks those anchors and tools/check_checker.py will fail."
+    },
+    {
+      "match": "posts[purity-tests].checker",
+      "what": "the purity checker question tree",
+      "why": "Every option is anchored to a published sentence. The three outcomes are deliberately not a score."
+    }
+  ],
+
+  "tokens": [
+    {
+      "pattern": "ISO\\s*3632",
+      "what": "an ISO 3632 claim",
+      "why": "The approved wording is \"lab tested to ISO 3632 Category I\", never the bare grade and never \"certified\". Category I is a band, not a score, and the site says so in several places.",
+      "instead": "The approved wording is \"lab tested to ISO 3632 Category I\", never the bare grade and never \"certified\". Write your copy without the testing claim and ask a developer to add that phrase. Do NOT reach for a vaguer substitute such as \"internationally certified\" or \"premium certified quality\": a vague claim we cannot evidence is worse than a precise one, not safer."
+    },
+    {
+      "pattern": "Category\\s+I\\b",
+      "what": "an ISO grade claim",
+      "why": "\"Category I\" is a laboratory result for a specific lot, not a marketing adjective.",
+      "instead": "Ask a developer. The approved phrasing is \"lab tested to ISO 3632 Category I\"."
+    },
+    {
+      "pattern": "\\bNABL\\b",
+      "what": "a laboratory accreditation claim",
+      "why": "NABL accreditation belongs to the testing laboratory, not to us. The accreditation number TC-9209 identifies a real body.",
+      "instead": "Ask a developer. Write the copy without the accreditation claim and they will add the approved wording."
+    },
+    {
+      "pattern": "\\bFSSAI\\b",
+      "what": "an FSSAI registration claim",
+      "why": "FSSAI registration is a legal status with a number attached.",
+      "instead": "Ask a developer. Write the copy without the registration claim and they will add the approved wording."
+    },
+    {
+      "pattern": "\\bTC-?\\s*\\d{4}\\b",
+      "what": "a laboratory accreditation number",
+      "why": "It identifies the accredited testing body and must match the certificate.",
+      "instead": "Ask a developer. The number must match the certificate, so it is never typed from memory."
+    }
+  ]
+}
