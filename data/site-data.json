@@ -1,7 +1,7 @@
 {
   "meta": {
     "schemaVersion": 1,
-    "lastPublished": "2026-08-29T01:58:51.876Z"
+    "lastPublished": "2026-09-11T13:21:56.551Z"
   },
   "brand": {
     "name": "Saffron of Kashmir",
@@ -85,7 +85,7 @@
         "symbol": "₹",
         "rate": 26.02,
         "decimals": 0,
-        "markup": -50
+        "markup": -40
       },
       "SAR": {
         "name": "Saudi Riyal",
@@ -767,7 +767,11 @@
       "dateISO": "2025-02-10",
       "dateDisplay": "February 10, 2025",
       "title": "The Saffron Fields of Pampore: A Centuries-Old Legacy",
-      "related": ["arithmetic-of-origin", "gi-635", "production-figures"],
+      "related": [
+        "arithmetic-of-origin",
+        "gi-635",
+        "production-figures"
+      ],
       "excerpt": "Saffron has grown on the Karewa plateau at Pampore since at least the 14th century. The soil is the reason, and the area under cultivation has been shrinking since the late 1990s.",
       "metaDescription": "Saffron has grown at Pampore since at least the 14th century. The Karewa soil is why, and the growing area has been shrinking since the late 1990s.",
       "body": "Saffron cultivation in Kashmir stretches back to at least the 14th century, when Persian traders are believed to have introduced the crocus to the Valley. The Mughal emperors were among the most ardent patrons of Kashmiri saffron - Akbar reportedly ordered saffron planted in royal gardens across the subcontinent, but only the Pampore variety produced the quality he sought. The reason is the soil: the Karewa formation is a rare geological deposit of glacial silt, mineral-rich, with perfect drainage for the moisture-sensitive crocus.\n\nThe harvest happens in a dramatic 15-to-20-day window in October and November, when the purple flowers emerge almost overnight. Entire farming families move into the fields before dawn, picking flowers by hand before the sun opens them fully. Delay even an hour, and the petals wilt and the stigmas lose potency - one of the most time-pressured harvests in the world.\n\nBy the early 2000s, the industry was in crisis: declining groundwater, erratic snowfall, and competition from cheaper Iranian saffron pushed many farmers to abandon the crop. The area under cultivation has fallen from 5,707 hectares in the late 1990s to about 3,665 as of 2025.\n\nSome families stayed. Saffron of Kashmir grows out of three generations of family saffron farming in Pampore. We work the same fields, sell direct, and keep the Mongra grade the Mughals prized above all spices. Every tin of our saffron represents a direct line from these ancient fields to your kitchen."
@@ -985,7 +989,11 @@
       "dateISO": "2025-03-05",
       "dateDisplay": "March 5, 2025",
       "title": "How to Test Saffron Purity at Home",
-      "related": ["health-claims", "read-lab-report", "what-saffron-costs"],
+      "related": [
+        "health-claims",
+        "read-lab-report",
+        "what-saffron-costs"
+      ],
       "excerpt": "The water test everyone repeats online passes some adulterated samples. Here is what actually gets sold in place of saffron, and what each home test can and cannot see.",
       "metaDescription": "The water test everyone repeats online passes some adulterated samples. What actually gets sold in place of saffron, and what each home test can and cannot see.",
       "body": "The water test everyone repeats online passes some adulterated samples.\n\nHere is what actually gets sold in place of saffron, and what each home test can and cannot see.\n\n## Safflower\n\nSold as \"Mexican saffron\", and the most common substitute by volume.\n\nSafflower petals are flat and floppy where saffron stigmas are not. They are also cheap enough that the economics are obvious: the substitution pays for itself many times over at saffron prices.\n\nIn water safflower releases colour, which is exactly why it works as a substitute, and it is why colour release on its own proves nothing. A jar of water turning yellow tells you something dissolved. It does not tell you what.\n\n## Marigold petals\n\nCut and dried marigold petal is cheap, available everywhere, and gives a strong yellow.\n\nSame problem as safflower for anyone testing by colour alone. Marigold is often cut into thin strips to imitate thread shape, which handles the visual objection at a glance.\n\nThe giveaway is structure rather than behaviour in water, which is the theme of this whole article.\n\n## Dyed corn silk\n\nCorn silk is already thread-shaped, which does most of the deception before any dye is involved. Dyed to the right red, it looks convincing in a photograph and reasonable in a tin.\n\nOf the three physical substitutes this is the one that survives a casual look best, because the shape is right to begin with. Under magnification it falls apart immediately, because corn silk has no stigma structure at all.\n\n## Artificial dyes\n\nTartrazine, Sudan dyes and Amaranth are the ones that turn up.\n\nThese are used two ways, and the second is the one to worry about.\n\nThe first use is colouring a non-saffron material so it passes as saffron. Crude, and usually caught by structure.\n\nThe second is colouring weak genuine saffron so it passes as strong. Everything in the tin is saffron. It is simply worth less than it looks, and a dye has closed the gap. Microscopy will not catch this, because the structure is genuine. Only a laboratory looking for the dye itself will.\n\nNo home test finds these reliably. HPLC does.\n\n## Moisture loading\n\nThis one is not adulteration in the usual sense and it still costs you money.\n\nISO 3632 sets a moisture maximum of 12 percent. Saffron carrying more water than it should weighs more per thread. You get fewer threads for your gram and each one is a little weaker. Nothing foreign has been added. You have bought water at saffron prices.\n\nIt is also the easiest to do accidentally. Saffron pulls moisture out of a humid room, so poor storage anywhere in the chain produces the same result as deliberate loading.\n\nThe moisture figure on a lab report is what catches it. There is no home version of this test.\n\n## The trumpet\n\nThe single most useful thing you can do at home costs the price of a cheap magnifier.\n\nA genuine saffron stigma is trumpet-shaped at one end, flaring out. Safflower, marigold petal and corn silk do not have that structure, because they are not stigmas. Under magnification the difference is obvious once you have seen it, and it does not depend on judging a colour or timing a soak.\n\nThis is the test worth learning. It is structural, so a dye cannot defeat it, and it takes about ten seconds per sample.\n\n## What the water test really tells you\n\nPlace 3-4 threads in a glass of cold water and watch for 10-15 minutes. Genuine saffron releases colour slowly and the thread keeps its red. Many fakes release colour fast and go pale.\n\nThat is a real signal and it catches the crude cases. What it misses:\n\n- Safflower and marigold, which also release colour, just differently.\n- Any dyed material where the dye is doing the work.\n- Genuine saffron that is simply weak, which passes the water test and fails on crocin.\n- Moisture loading, which the test cannot see at all.\n\nSo run it, but treat a pass as the beginning rather than the end. The test is good at excluding the worst material and poor at confirming the best.\n\n## The baking soda test\n\nAdd a pinch of baking soda to the water from the test above. Genuine saffron turns it a bright golden yellow. Some adulterated samples turn it red, green or a murky brown, as the alkali reacts with a synthetic pigment.\n\nLike the water test, this catches a crude dye and is blind to everything else. It says nothing about structure, and nothing about a weak genuine batch.\n\n## The rub test\n\nRub a single thread between your fingers. A genuine stigma stains your fingers golden yellow and softens without crumbling. A dyed thread often bleeds colour quickly and breaks up.\n\nThis one is closer to the magnifier than to the water test, because it reads the material rather than its colour. It is still a rough version of what magnification does properly.\n\n## Two habits that beat any single test\n\nBuy from someone who will name the lot, and read the three ISO 3632 numbers on the report for that lot. [How to read one](/blog/read-lab-report/).\n\nStructure, potency and dyes are three separate questions and no single check answers all three. A magnifier settles structure at home. The crocin, picrocrocin and safranal values settle potency. HPLC settles dyes, and only a lab can run it.\n\n## A note on price as a signal\n\nPrice is not a test, but it is evidence.\n\n160 to 180 flowers make one gram, every one picked and separated by hand. A listing priced where that labour cannot possibly have happened is describing a different product, whatever the photographs show. The adulterants on this page exist because the gap between the real cost and the advertised price has to be filled with something.\n\nThat does not mean an expensive listing is genuine. It means a very cheap one has already answered the question.\n\n## What actually settles it\n\nFor structure, a magnifier. For potency, the crocin, picrocrocin and safranal values on a lab report. For dyes, HPLC.\n\nBetween them those three cover every case above. Any one of them alone leaves a gap, and the gap is where the money is."
@@ -996,7 +1004,11 @@
       "dateISO": "2025-04-01",
       "dateDisplay": "April 1, 2025",
       "title": "Using Kashmiri Saffron in Arabic Cuisine",
-      "related": ["how-much-to-use", "storing-saffron", "grade-names"],
+      "related": [
+        "how-much-to-use",
+        "storing-saffron",
+        "grade-names"
+      ],
       "excerpt": "Saffron has long been part of Arab cuisine - from celebratory Machboos to saffron-scented Gahwa and the delicate Umm Ali dessert.",
       "body": "**Machboos (Kabsa):** The Gulf's answer to biryani. Use 8-10 threads of Mongra saffron, bloomed for 20 minutes in 3 tablespoons of warm (not boiling) water, then added with rose water in the final steaming stage. The goal is a subtle golden colour and floral perfume - not an aggressive yellow. [Full Machboos recipe here.](/recipes)\n\n**Saffron Gahwa:** Traditional Arabic cardamom coffee with a pinch of saffron added to the grounds. Use just 3-4 threads per pot - saffron is a supporting note here, adding warmth and a faint bittersweet edge.\n\n**Saffron Milk (Haleeb Zafaran):** Bloom 8-10 threads in a tablespoon of warm milk, then add to a full warm cup with honey, cardamom, and pistachios - the Arabic equivalent of Kesar Doodh, drunk daily across Emirati households.\n\n**The golden rule:** Always bloom saffron in warm liquid (water, milk, stock - never oil) before adding it to your dish, and never grind Mongra saffron dry - it destroys the delicate aromatic compounds."
     },
@@ -1007,7 +1019,11 @@
       "dateISO": "2026-08-29",
       "dateDisplay": "August 29, 2026",
       "title": "Kashmir Saffron GI No. 635: What It Actually Means",
-      "related": ["arithmetic-of-origin", "origins-compared", "pampore-legacy"],
+      "related": [
+        "arithmetic-of-origin",
+        "origins-compared",
+        "pampore-legacy"
+      ],
       "metaTitle": "Kashmir Saffron GI No. 635 Explained",
       "metaDescription": "Kashmir Saffron holds Geographical Indication No. 635. What the tag legally does, who owns it, and what a buyer can actually check.",
       "excerpt": "Every seller online says \"GI tagged\". Almost none of them can name the GI number, and the tag does not belong to any of them.",
@@ -1019,7 +1035,11 @@
       "dateISO": "2026-08-29",
       "dateDisplay": "August 29, 2026",
       "title": "How to Read a Saffron Lab Report",
-      "related": ["purity-tests", "grade-names", "health-claims"],
+      "related": [
+        "purity-tests",
+        "grade-names",
+        "health-claims"
+      ],
       "metaTitle": "How to Read a Saffron Lab Report",
       "metaDescription": "ISO 3632 Category I tells you a batch passed. The crocin, picrocrocin and safranal numbers tell you by how much. How to read them.",
       "excerpt": "\"ISO 3632 Category I\" on a label tells you the seller passed. It does not tell you by how much. The number does.",
@@ -1032,7 +1052,11 @@
       "dateISO": "2026-08-29",
       "dateDisplay": "August 29, 2026",
       "title": "Why Most \"Kashmiri Saffron\" Sold Online Is Not From Kashmir",
-      "related": ["production-figures", "gi-635", "origins-compared"],
+      "related": [
+        "production-figures",
+        "gi-635",
+        "origins-compared"
+      ],
       "metaTitle": "Why Most Kashmiri Saffron Online Is Not Kashmiri",
       "metaDescription": "Kashmir grows saffron on about 3,665 hectares. Do the arithmetic on what is sold as Kashmiri and the numbers stop working.",
       "excerpt": "Kashmir grows saffron on about 3,665 hectares. Do the arithmetic on what is being sold as Kashmiri and the numbers stop working.",
@@ -1045,7 +1069,11 @@
       "dateISO": "2026-08-29",
       "dateDisplay": "August 29, 2026",
       "title": "Nobody Agrees How Much Saffron Kashmir Produces",
-      "related": ["arithmetic-of-origin", "gi-635", "what-saffron-costs"],
+      "related": [
+        "arithmetic-of-origin",
+        "gi-635",
+        "what-saffron-costs"
+      ],
       "metaTitle": "Kashmir Saffron Production: The Figures Conflict",
       "metaDescription": "Four official-sounding sources give four different production figures for the same years. One says 19.58 tonnes. Another says 2.6.",
       "excerpt": "Four official-sounding sources give four different production figures for the same years. One says 19.58 tonnes. Another says 2.6.",
@@ -1057,7 +1085,11 @@
       "dateISO": "2026-08-29",
       "dateDisplay": "August 29, 2026",
       "title": "What Saffron Should Cost in 2026",
-      "related": ["arithmetic-of-origin", "grade-names", "production-figures"],
+      "related": [
+        "arithmetic-of-origin",
+        "grade-names",
+        "production-figures"
+      ],
       "metaTitle": "What Real Saffron Should Cost in 2026",
       "metaDescription": "160 to 180 flowers make one gram, all picked by hand. That fact sets a price floor no seller can go under honestly.",
       "excerpt": "160 to 180 flowers make one gram, all picked by hand. That fact sets a floor no seller can go under honestly.",
@@ -1070,7 +1102,11 @@
       "dateISO": "2026-08-29",
       "dateDisplay": "August 29, 2026",
       "title": "Mongra Grade Saffron, and What the Other Names Mean",
-      "related": ["read-lab-report", "origins-compared", "powder-or-threads"],
+      "related": [
+        "read-lab-report",
+        "origins-compared",
+        "powder-or-threads"
+      ],
       "metaTitle": "What Is Mongra Grade Saffron? Grade Names Explained",
       "metaDescription": "Two different grading systems are in use, one traditional and one laboratory. Sellers mix them. Here is what each name actually means.",
       "excerpt": "Two completely different systems are in use, one traditional and one laboratory. Sellers mix them deliberately.",
@@ -1082,7 +1118,11 @@
       "dateISO": "2026-09-05",
       "dateDisplay": "September 5, 2026",
       "title": "Why We Do Not Make Health Claims",
-      "related": ["read-lab-report", "purity-tests", "gi-635"],
+      "related": [
+        "read-lab-report",
+        "purity-tests",
+        "gi-635"
+      ],
       "metaTitle": "Why We Do Not Make Health Claims",
       "metaDescription": "Two regulators prohibit a food seller from advertising a food as acting on a disease. Here is what they say, and what we say instead.",
       "excerpt": "We sell saffron as food. We do not tell you what it does to your body, and there are rules behind that rather than coyness.",
@@ -1094,7 +1134,11 @@
       "dateISO": "2026-09-05",
       "dateDisplay": "September 5, 2026",
       "title": "Kashmiri, Iranian and Spanish Saffron: What Origin Actually Tells You",
-      "related": ["arithmetic-of-origin", "gi-635", "grade-names"],
+      "related": [
+        "arithmetic-of-origin",
+        "gi-635",
+        "grade-names"
+      ],
       "metaTitle": "Kashmiri vs Iranian vs Spanish Saffron",
       "metaDescription": "Origin is a weak predictor of quality and a strong predictor of price, vocabulary and supply chain. What the comparison survives, and what it does not.",
       "excerpt": "The quality comparison between Kashmiri, Iranian and Spanish saffron does not survive being checked. What origin does tell you is which grading vocabulary you are reading.",
@@ -1106,7 +1150,11 @@
       "dateISO": "2026-09-05",
       "dateDisplay": "September 5, 2026",
       "title": "Saffron Powder vs Threads: What You Can Actually Check",
-      "related": ["grade-names", "purity-tests", "how-much-to-use"],
+      "related": [
+        "grade-names",
+        "purity-tests",
+        "how-much-to-use"
+      ],
       "metaTitle": "Saffron Powder vs Threads",
       "metaDescription": "Powder is not inferior saffron. It is unverifiable saffron. What you give up, where powder is genuinely better, and why grinding your own gets both.",
       "excerpt": "Powder is not weaker saffron. It is saffron you cannot check, and every test on this site assumes a thread.",
@@ -1119,7 +1167,11 @@
       "dateISO": "2026-08-29",
       "dateDisplay": "August 29, 2026",
       "title": "How to Store Saffron So It Is Still Worth What You Paid",
-      "related": ["how-much-to-use", "read-lab-report", "what-saffron-costs"],
+      "related": [
+        "how-much-to-use",
+        "read-lab-report",
+        "what-saffron-costs"
+      ],
       "metaTitle": "How to Store Saffron Properly",
       "metaDescription": "Saffron does not spoil, it fades. Light, heat, air and moisture in order of damage, and why the fridge is usually the wrong answer.",
       "excerpt": "Saffron does not spoil. It fades. Most of what people call bad saffron is good saffron stored badly.",
@@ -1132,7 +1184,11 @@
       "dateISO": "2026-08-29",
       "dateDisplay": "August 29, 2026",
       "title": "How Much Saffron to Actually Use",
-      "related": ["arabic-cuisine", "storing-saffron", "powder-or-threads"],
+      "related": [
+        "arabic-cuisine",
+        "storing-saffron",
+        "powder-or-threads"
+      ],
       "metaTitle": "How Much Saffron to Use per Dish",
       "metaDescription": "Most recipes over-specify saffron by a factor of two or more, and over-steeping makes it bitter rather than stronger.",
       "excerpt": "Most recipes over-specify saffron by a factor of two or more, and over-steeping makes it bitter, not stronger.",
@@ -1144,7 +1200,11 @@
       "dateISO": "2026-11-01",
       "dateDisplay": "November 1, 2026",
       "title": "Harvest Diary: This Season in Our Fields",
-      "related": ["pampore-legacy", "arithmetic-of-origin", "production-figures"],
+      "related": [
+        "pampore-legacy",
+        "arithmetic-of-origin",
+        "production-figures"
+      ],
       "metaTitle": "Kashmir Saffron Harvest Diary",
       "metaDescription": "Dated photographs from one family field in Pampore during the three weeks the crop exists, and what this season actually yielded.",
       "excerpt": "Photographs with dates on them, from our own fields, during the three weeks the crop exists.",
