@@ -140,10 +140,14 @@
       }, opts.headers || {})
     }));
     if (!res.ok) {
-      let msg = res.status + '';
-      try { msg = (await res.json()).message || msg; } catch (e) { /* ignore */ }
+      let msg = res.status + '', body = null;
+      try { body = await res.json(); msg = body.message || msg; } catch (e) { /* ignore */ }
       const err = new Error(msg);
       err.status = res.status;
+      /* The parsed body is kept because GitHub puts the real cause in it. Three
+         completely different faults come back as HTTP 422 and are told apart
+         only by the message text. See classifyRefFault. */
+      err.body = body;
       throw err;
     }
     if (res.status === 204) return null;
@@ -1178,7 +1182,10 @@
     isImageName: function (name) { return isImageName(name); },
     sanitiseUploadName: function (n) {
       return String(n).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9._-]/g, '');
-    }
+    },
+    /* Exposed so the three-different-faults-one-status-code mapping can be
+       driven with the real API bodies rather than reasoned about. */
+    classifyRefFault: function (err, forced) { return classifyRefFault(err, forced); }
   };
 
   /* ---------- generic list editors ---------- */
@@ -2277,6 +2284,105 @@
     $('#pub-overlay').classList.add('open');
   }
 
+  /* Why a branch update was refused, in words that name the actual cause.
+
+     THREE DIFFERENT FAULTS COME BACK AS HTTP 422. The panel used to map every
+     422 and 409 to "the branch moved while this publish was being prepared,
+     so the update was refused rather than overwriting someone else's commit".
+     That is one of the three. When the real cause was the ruleset, the owner
+     went looking for someone else's commit that did not exist.
+
+     Captured from the live API on 11 Sep 2026 by provoking each one against a
+     scratch branch, rather than written from memory:
+
+       PATCH /git/refs/heads/<protected branch>, commit with no CI run
+         422  Repository rule violations found
+              Required status check "verify" is expected.
+
+       PATCH /git/refs/heads/<branch>, sha behind the tip, force false
+         422  Update is not a fast forward
+
+       PATCH /git/refs/heads/<branch that is not there>
+         422  Reference does not exist
+
+     The third is the one most worth separating. A mistyped or deleted branch
+     is not a race and has nothing to do with anyone else's work, and telling
+     someone to reload and re-apply their edits will not fix it.
+
+     `forced` lets the caller state a cause it already knows, for the case
+     where the panel detects the race itself rather than being told by a 422. */
+  function classifyRefFault(err, forced) {
+    const branch = (forced && forced.branch) || S.cfg.branch;
+    const raw = (err && err.message) ? String(err.message) : '';
+    const status = err ? err.status : 0;
+    const NOTHING = '<strong style="color:var(--danger);">Nothing was published.</strong> ';
+    const SAFE = ' Your edits are still here and the live site is unchanged.';
+
+    function detailOf(text) {
+      /* The rules body is a headline, a blank line, then the rule that fired. */
+      const rest = text.split('\n').slice(1).join(' ').replace(/\s+/g, ' ').trim();
+      return rest ? '<br><br>The rule that refused it: <em>' + A(rest) + '</em>' : '';
+    }
+
+    const kind = (forced && forced.kind) ? forced.kind
+      : status === 401 ? 'auth'
+      : status === 403 ? 'permission'
+      : /^Repository rule violations found/.test(raw) ? 'rules'
+      : /not a fast forward/i.test(raw) ? 'moved'
+      : /Reference does not exist/i.test(raw) ? 'missing'
+      : 'unknown';
+
+    if (kind === 'moved') {
+      const where = (forced && forced.from && forced.to)
+        ? '<br><br>You started from <code>' + A(String(forced.from).slice(0, 7) )+
+          '</code> and <em>' + A(branch) + '</em> is now on <code>' +
+          A(String(forced.to).slice(0, 7)) + '</code>.'
+        : '';
+      return { kind: kind, html: NOTHING +
+        'Someone else published to <em>' + A(branch) + '</em> while your changes were being ' +
+        'uploaded, so this was refused rather than writing over their work.' + where +
+        '<br><br>Go to Settings, choose <em>Reload from GitHub</em>, re-apply your edits and ' +
+        'publish again. Nothing of theirs was lost and nothing of yours has gone anywhere yet.' };
+    }
+
+    if (kind === 'rules') {
+      return { kind: kind, html: NOTHING +
+        'The <em>' + A(branch) + '</em> branch has a protection rule that refused this change. ' +
+        'This is not about anyone else\'s work and nothing is lost.' + detailOf(raw) +
+        '<br><br>If that mentions a status check, this panel is publishing straight at a ' +
+        'protected branch. It should be publishing to <code>content</code>, which is checked ' +
+        'automatically and then goes live on its own. Open Settings and check the branch name.' +
+        SAFE };
+    }
+
+    if (kind === 'missing') {
+      return { kind: kind, html: NOTHING +
+        'There is no branch called <em>' + A(branch) + '</em> in this repository, so there was ' +
+        'nothing to publish to. Nobody else is involved and nothing raced you.' +
+        '<br><br>Open Settings and check the branch name. It should normally be ' +
+        '<code>content</code>.' + SAFE };
+    }
+
+    if (kind === 'permission') {
+      return { kind: kind, html: NOTHING +
+        'This token is not allowed to write to <em>' + A(branch) + '</em>.' +
+        '<br><br>It needs <em>Contents: Read and write</em> on this repository. If it is a ' +
+        'fine-grained token it may also have expired. Send this message to a developer.' + SAFE };
+    }
+
+    if (kind === 'auth') {
+      return { kind: kind, html: NOTHING +
+        'GitHub rejected the token. It has most likely expired.' +
+        '<br><br>Generate a new one and reconnect from the login screen.' + SAFE };
+    }
+
+    return { kind: 'unknown', html: NOTHING +
+      'GitHub refused to move the <em>' + A(branch) + '</em> branch and gave this reason: <em>' +
+      A(raw || 'no reason given') + '</em> (HTTP ' + A(String(status || '?')) + ').' +
+      '<br><br>That is not one of the causes this panel knows how to explain, so send this ' +
+      'message to a developer rather than guessing.' + SAFE };
+  }
+
   /* Atomic route. Steps a-e touch nothing the branch can see; only step f
      moves it. Any failure before f returns early, so the branch is never
      left half-updated. Returns { ok, written, note } or { ok:false, ... }. */
@@ -2353,14 +2459,46 @@
     }
     setStage('commit', 'done', 'ok');
 
+    /* (e2) THE REF WINDOW.
+
+       Step (a) read the branch tip, and the commit built above names it as its
+       parent. Between then and now, 33 blobs went up one at a time. If someone
+       published during that window the tip has moved, this commit's parent is
+       no longer it, and moving the ref would either be refused or, with force,
+       would quietly discard their work.
+
+       Reading the ref once at the start and trusting it for the rest of the
+       upload is the bug. What a ref read tells you is only true at the instant
+       it is read, and that instant was thirty-odd HTTP round trips ago.
+
+       Re-reading here does not make the window zero. Nothing client-side can,
+       which is why force stays false and GitHub remains the final arbiter.
+       What it buys is the explanation: a race caught here can name both
+       commits and say plainly what happened, instead of surfacing as a 422
+       that has to be guessed at afterwards. */
+    setStage('ref', 'checking the branch…', 'run');
+    let tipNow;
+    try {
+      tipNow = (await apiGetRef()).object.sha;
+    } catch (err) {
+      setStage('ref', 'failed', 'err');
+      return { ok: false, stage: 'Updating branch', err: err, fault: classifyRefFault(err) };
+    }
+    if (tipNow !== headSha) {
+      setStage('ref', 'refused', 'err');
+      return {
+        ok: false, stage: 'Updating branch',
+        fault: classifyRefFault(null, { kind: 'moved', from: headSha, to: tipNow })
+      };
+    }
+
     /* (f) the only step that mutates the branch */
     setStage('ref', 'working…', 'run');
     try {
       await apiUpdateRef(newCommit.sha);                                 // f
     } catch (err) {
       setStage('ref', 'failed', 'err');
-      const moved = err.status === 422 || err.status === 409;
-      return { ok: false, stage: 'Updating branch', err: err, moved: moved };
+      return { ok: false, stage: 'Updating branch', err: err, fault: classifyRefFault(err) };
     }
     setStage('ref', 'done', 'ok');
     return { ok: true, written: changed.length, commit: newCommit.sha };
@@ -2568,11 +2706,8 @@
             '<code>' + A(String(res.commit).slice(0, 7)) + '</code>. GitHub Pages is now redeploying ' +
             '(usually under a minute). If the live site still shows old content, your Cloudflare cache ' +
             'may need a few minutes — or purge it in the Cloudflare dashboard (Caching → Purge Everything).';
-      } else if (res.moved) {
-        note.innerHTML = '<strong style="color:var(--danger);">Nothing was published.</strong> ' +
-          'The <em>' + A(S.cfg.branch) + '</em> branch moved while this publish was being prepared, ' +
-          'so the update was refused rather than overwriting someone else&rsquo;s commit. ' +
-          'Go to Settings → Reload from GitHub, re-apply your edits, then publish again.';
+      } else if (res.fault) {
+        note.innerHTML = res.fault.html;
       } else {
         note.innerHTML = '<strong style="color:var(--danger);">Nothing was published.</strong> ' +
           'Failed at: <em>' + A(res.stage) + '</em> — ' + A(res.err && res.err.message ? res.err.message : 'unknown error') + '. ' +
