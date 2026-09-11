@@ -19,7 +19,7 @@
      admin.js compares this value against the build-id.json on the live site
      before publishing, and blocks the publish if they differ. See the 29 Aug
      2026 incident in docs/RESUME.md. */
-  var BUILD_ID = 'd6c6b281a76a';
+  var BUILD_ID = '33300c87aad7';
 
   /* ---------- helpers ---------- */
 
@@ -227,9 +227,24 @@
     }).filter(Boolean).join('\n');
   }
 
+  /* A script element is a raw text element: the parser ends it at the first
+     closing script tag it sees, wherever that is. JSON.stringify does not
+     escape the less-than sign, so any content value containing a closing script
+     tag ended this element early. The rest of the JSON then landed on the page
+     as markup, which meant two things at once: the structured data was
+     truncated and invalid, and everything after the break was parsed as HTML.
+     A description carrying a closing script tag followed by an opening one put
+     a working, executing script tag on every page that has JSON-LD, and the
+     admin panel is the thing that edits descriptions.
+
+     Every less-than sign is now written as its six-character JSON unicode
+     escape. That is an ordinary JSON string escape, so JSON.parse hands back
+     the original character and no consumer sees a difference. No value in the
+     site today contains one, so this changes no generated output; it stops the
+     next one from being a live defect. */
   function ld(obj) {
     return '  <script type="application/ld+json">\n  ' +
-      JSON.stringify(obj, null, 2).replace(/\n/g, '\n  ') +
+      JSON.stringify(obj, null, 2).replace(/</g, '\\u003c').replace(/\n/g, '\n  ') +
       '\n  </script>';
   }
 

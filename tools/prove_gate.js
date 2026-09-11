@@ -44,11 +44,23 @@
       why: 'the 29 Aug 2026 unary-plus bug shipped NaN into 15 order buttons',
       mutate: function (d) { d.products[0].price = NaN; }
     },
+    /* This used to be a refusal case, and it caught a live defect: ld() built
+       its block with JSON.stringify, which does not escape the less-than sign,
+       so a description containing a closing script tag ended the element early
+       and put executing markup on every page with JSON-LD. templates.js now
+       escapes it, so the same content is safe and must be ALLOWED.
+
+       That leaves the jsonld check with no fault reachable from content. It is
+       now a regression guard on templates.js rather than a check on data: the
+       only way to make it fire is to break the serialiser again, which is
+       exactly what it should catch. Recorded here so the change in what this
+       case proves is deliberate and not a silent loss of coverage. */
     {
-      name: '2 jsonld: a description containing </script>',
-      expect: 'jsonld',
-      why: 'ld() serialises with JSON.stringify, which does not escape a closing script tag',
-      mutate: function (d) { d.brand.orgDescription = 'Saffron </script> growers'; }
+      name: '2 jsonld: a description containing a closing script tag is now safe',
+      expect: null,
+      why: 'ld() escapes the less-than sign, so the block stays valid and the text round-trips',
+      assertRoundTrip: 'Saffron </script><script>alert(1)</script> growers',
+      mutate: function (d) { d.brand.orgDescription = 'Saffron </script><script>alert(1)</script> growers'; }
     },
     {
       name: '3 productids: an id that no longer matches its address',
@@ -252,6 +264,26 @@
         if (!res.ok) {
           const f = res.checks.filter(x => x.findings.length)[0];
           detail = f.id + ': ' + f.findings[0].what;
+        }
+        /* Not blocked is only half the claim for the escaping case. The other
+           half is that the block still parses and the text survives intact,
+           because an escape that mangled the content would also pass a check
+           that only asked whether the JSON was valid. */
+        if (res.ok && c.assertRoundTrip) {
+          const files = SOKTemplates.renderAll(after);
+          const blk = /<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/.exec(files['index.html']);
+          let got = null, raw = true;
+          try {
+            const body = blk[1];
+            raw = body.indexOf('<script') !== -1 || body.indexOf('</script') !== -1;
+            const parsed = JSON.parse(body.trim());
+            const graph = parsed['@graph'] || [parsed];
+            const org = graph.filter(function (g) { return g && g['@type'] === 'Organization'; })[0];
+            got = org ? org.description : '(no Organization node)';
+          } catch (err) { got = 'PARSE FAILED: ' + err.message; }
+          if (raw) { verdict = 'FAIL raw script tag survived in the block'; detail = ''; }
+          else if (got !== c.assertRoundTrip) { verdict = 'FAIL round trip'; detail = String(got).slice(0, 120); }
+          else { detail = 'block parses, no raw script tag, text round-trips exactly'; }
         }
       } else if (fired.indexOf(c.expect) === -1) {
         verdict = 'FAIL did not fire';
