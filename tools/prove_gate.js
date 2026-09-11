@@ -115,21 +115,26 @@
       mutate: function (d) { d.products = []; }
     },
 
-    /* Not a defect, a consequence, recorded so it is not rediscovered as one.
-
-       Rule 9 is a content match tested BEFORE and AFTER, so editing any string
-       that already contains a locked claim is refused even when the edit is
-       somewhere else in that string. Eleven of the fifteen post bodies mention
-       ISO 3632, Category I or NABL somewhere, so in practice rule 9 locks
-       eleven post bodies, not the four the path list names. Fixing a typo in
-       storing-saffron needs a developer. */
+    /* Rule 9 fires on a change to the CLAIM, not to the string holding it.
+       These two are the pair that pins that down, inside the same article
+       body: storing-saffron mentions ISO 3632 and Category I and is NOT locked
+       by path, so it is exactly the case the old broad rule got wrong. */
     {
-      name: '12 rule 9 reaches further than the path list',
+      name: '12 rule 9: a claim altered inside an otherwise editable body',
       expect: 'locked',
-      why: 'editing a body that already mentions a locked claim is refused, typo or not',
+      why: 'altering the claim itself is the threat, wherever it sits',
       mutate: function (d) {
         const p = postById(d, 'storing-saffron');
-        p.body = p.body + '\n\nKeep the tin closed and out of the light.';
+        p.body = p.body.replace('ISO 3632', 'ISO  3632');
+      }
+    },
+    {
+      name: '13 rule 9: a claim removed from an otherwise editable body',
+      expect: 'locked',
+      why: 'deleting a claim matters as much as adding one',
+      mutate: function (d) {
+        const p = postById(d, 'storing-saffron');
+        p.body = p.body.replace('ISO 3632', 'ISO 3633');
       }
     },
 
@@ -150,14 +155,29 @@
       name: 'C3 control: rewriting an unlocked article body',
       expect: null,
       why: 'only four post bodies are locked by path; the rest are the team\'s to edit',
-      /* arabic-cuisine is one of only four post bodies that mention none of the
-         locked claims. See case 12: the other eleven are locked in practice by
-         rule 9, not by the path list. Picking one of those here would have the
-         control pass for the wrong reason. */
       mutate: function (d) {
         const p = postById(d, 'arabic-cuisine');
         p.body = p.body + '\n\nServe it hot, in small cups.';
       }
+    },
+    /* THE CONTROL THE OLD RULE FAILED. storing-saffron mentions ISO 3632 and
+       Category I, so the broad rule refused every edit to it and fixing a typo
+       needed a developer. Eleven of the fifteen post bodies were in that state.
+       The claim here is untouched, so this must be allowed. */
+    {
+      name: 'C8 control: an edit elsewhere in a body that mentions a claim',
+      expect: null,
+      why: 'a lock that makes ordinary work impossible gets routed around, not obeyed',
+      mutate: function (d) {
+        const p = postById(d, 'storing-saffron');
+        p.body = p.body + '\n\nKeep the tin closed and out of the light.';
+      }
+    },
+    {
+      name: 'C9 control: retitling an article whose body carries claims',
+      expect: null,
+      why: 'the claim is in the body and was not touched',
+      mutate: function (d) { postById(d, 'read-lab-report').title = 'How to Read a Lab Report'; }
     },
     {
       name: 'C4 control: the word "isolated"',
