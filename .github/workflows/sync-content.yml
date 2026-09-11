@@ -138,10 +138,17 @@ jobs:
             echo "Full log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           } > "$BODY"
 
+          # The label is what makes these findable later, so it is created if
+          # it is missing rather than fallen back from. The old code dropped to
+          # an unlabelled issue when the label did not exist, which is a silent
+          # downgrade: the issue still appears, nobody notices it is unfiltered,
+          # and the filter quietly returns nothing forever.
+          gh label create publish-blocked \
+            --color B60205 \
+            --description "A publish or a branch sync was refused. Opened automatically; the live site is unchanged." \
+            2>/dev/null || true
+
           gh issue create \
             --title "Admin panel branch is out of step - $(date -u '+%d %b %Y %H:%M') UTC" \
             --body-file "$BODY" \
-            --label "publish-blocked" 2>/dev/null \
-          || gh issue create \
-            --title "Admin panel branch is out of step - $(date -u '+%d %b %Y %H:%M') UTC" \
-            --body-file "$BODY"
+            --label "publish-blocked"
