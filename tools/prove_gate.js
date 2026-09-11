@@ -44,11 +44,23 @@
       why: 'the 29 Aug 2026 unary-plus bug shipped NaN into 15 order buttons',
       mutate: function (d) { d.products[0].price = NaN; }
     },
+    /* This used to be a refusal case, and it caught a live defect: ld() built
+       its block with JSON.stringify, which does not escape the less-than sign,
+       so a description containing a closing script tag ended the element early
+       and put executing markup on every page with JSON-LD. templates.js now
+       escapes it, so the same content is safe and must be ALLOWED.
+
+       That leaves the jsonld check with no fault reachable from content. It is
+       now a regression guard on templates.js rather than a check on data: the
+       only way to make it fire is to break the serialiser again, which is
+       exactly what it should catch. Recorded here so the change in what this
+       case proves is deliberate and not a silent loss of coverage. */
     {
-      name: '2 jsonld: a description containing </script>',
-      expect: 'jsonld',
-      why: 'ld() serialises with JSON.stringify, which does not escape a closing script tag',
-      mutate: function (d) { d.brand.orgDescription = 'Saffron </script> growers'; }
+      name: '2 jsonld: a description containing a closing script tag is now safe',
+      expect: null,
+      why: 'ld() escapes the less-than sign, so the block stays valid and the text round-trips',
+      assertRoundTrip: 'Saffron </script><script>alert(1)</script> growers',
+      mutate: function (d) { d.brand.orgDescription = 'Saffron </script><script>alert(1)</script> growers'; }
     },
     {
       name: '3 productids: an id that no longer matches its address',
@@ -115,21 +127,26 @@
       mutate: function (d) { d.products = []; }
     },
 
-    /* Not a defect, a consequence, recorded so it is not rediscovered as one.
-
-       Rule 9 is a content match tested BEFORE and AFTER, so editing any string
-       that already contains a locked claim is refused even when the edit is
-       somewhere else in that string. Eleven of the fifteen post bodies mention
-       ISO 3632, Category I or NABL somewhere, so in practice rule 9 locks
-       eleven post bodies, not the four the path list names. Fixing a typo in
-       storing-saffron needs a developer. */
+    /* Rule 9 fires on a change to the CLAIM, not to the string holding it.
+       These two are the pair that pins that down, inside the same article
+       body: storing-saffron mentions ISO 3632 and Category I and is NOT locked
+       by path, so it is exactly the case the old broad rule got wrong. */
     {
-      name: '12 rule 9 reaches further than the path list',
+      name: '12 rule 9: a claim altered inside an otherwise editable body',
       expect: 'locked',
-      why: 'editing a body that already mentions a locked claim is refused, typo or not',
+      why: 'altering the claim itself is the threat, wherever it sits',
       mutate: function (d) {
         const p = postById(d, 'storing-saffron');
-        p.body = p.body + '\n\nKeep the tin closed and out of the light.';
+        p.body = p.body.replace('ISO 3632', 'ISO  3632');
+      }
+    },
+    {
+      name: '13 rule 9: a claim removed from an otherwise editable body',
+      expect: 'locked',
+      why: 'deleting a claim matters as much as adding one',
+      mutate: function (d) {
+        const p = postById(d, 'storing-saffron');
+        p.body = p.body.replace('ISO 3632', 'ISO 3633');
       }
     },
 
@@ -150,14 +167,29 @@
       name: 'C3 control: rewriting an unlocked article body',
       expect: null,
       why: 'only four post bodies are locked by path; the rest are the team\'s to edit',
-      /* arabic-cuisine is one of only four post bodies that mention none of the
-         locked claims. See case 12: the other eleven are locked in practice by
-         rule 9, not by the path list. Picking one of those here would have the
-         control pass for the wrong reason. */
       mutate: function (d) {
         const p = postById(d, 'arabic-cuisine');
         p.body = p.body + '\n\nServe it hot, in small cups.';
       }
+    },
+    /* THE CONTROL THE OLD RULE FAILED. storing-saffron mentions ISO 3632 and
+       Category I, so the broad rule refused every edit to it and fixing a typo
+       needed a developer. Eleven of the fifteen post bodies were in that state.
+       The claim here is untouched, so this must be allowed. */
+    {
+      name: 'C8 control: an edit elsewhere in a body that mentions a claim',
+      expect: null,
+      why: 'a lock that makes ordinary work impossible gets routed around, not obeyed',
+      mutate: function (d) {
+        const p = postById(d, 'storing-saffron');
+        p.body = p.body + '\n\nKeep the tin closed and out of the light.';
+      }
+    },
+    {
+      name: 'C9 control: retitling an article whose body carries claims',
+      expect: null,
+      why: 'the claim is in the body and was not touched',
+      mutate: function (d) { postById(d, 'read-lab-report').title = 'How to Read a Lab Report'; }
     },
     {
       name: 'C4 control: the word "isolated"',
@@ -232,6 +264,26 @@
         if (!res.ok) {
           const f = res.checks.filter(x => x.findings.length)[0];
           detail = f.id + ': ' + f.findings[0].what;
+        }
+        /* Not blocked is only half the claim for the escaping case. The other
+           half is that the block still parses and the text survives intact,
+           because an escape that mangled the content would also pass a check
+           that only asked whether the JSON was valid. */
+        if (res.ok && c.assertRoundTrip) {
+          const files = SOKTemplates.renderAll(after);
+          const blk = /<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/.exec(files['index.html']);
+          let got = null, raw = true;
+          try {
+            const body = blk[1];
+            raw = body.indexOf('<script') !== -1 || body.indexOf('</script') !== -1;
+            const parsed = JSON.parse(body.trim());
+            const graph = parsed['@graph'] || [parsed];
+            const org = graph.filter(function (g) { return g && g['@type'] === 'Organization'; })[0];
+            got = org ? org.description : '(no Organization node)';
+          } catch (err) { got = 'PARSE FAILED: ' + err.message; }
+          if (raw) { verdict = 'FAIL raw script tag survived in the block'; detail = ''; }
+          else if (got !== c.assertRoundTrip) { verdict = 'FAIL round trip'; detail = String(got).slice(0, 120); }
+          else { detail = 'block parses, no raw script tag, text round-trips exactly'; }
         }
       } else if (fired.indexOf(c.expect) === -1) {
         verdict = 'FAIL did not fire';
