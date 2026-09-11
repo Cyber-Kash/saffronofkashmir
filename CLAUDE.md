@@ -12,6 +12,7 @@ Read this fully before touching anything. These rules protect a **live business 
 - `assets/admin/templates.js` turns that JSON into the site's HTML (pure functions: data → HTML strings).
 - `build.js` regenerates all output files from the JSON + templates. Run with `node build.js`.
 - `admin.html` + `assets/admin/admin.js` are a **browser-only** editor: it edits the JSON and commits the regenerated pages to GitHub via the GitHub API.
+- **The panel commits to `content`, never to `main`.** A workflow runs every check on that push and only then fast-forwards `main`, which is what GitHub Pages deploys. `main` carries a ruleset requiring the `verify` check, so a direct push from a browser is refused and always will be. The full model, and the one constraint it rests on, is in `docs/infrastructure.md` section 7.
 - If an older handoff document and the live `data/site-data.json` disagree on any value, **the JSON wins.**
 
 ---
@@ -629,6 +630,7 @@ The admin panel is a single-page app. `SECTIONS` maps section keys to render fun
 | `settings` | `secSettings()` | GitHub token, repo, branch |
 | `overlay` | `secOverlay()` | Discount overlay toggle, content, Mailchimp endpoint |
 | `currencies` | `secCurrencies()` | Per-currency exchange rate, price markup %, decimal places |
+| `policies` | `secPolicies()` | Terms, returns, shipping and privacy. **Every field is rendered read-only**: the whole `policies` tree is locked in `tools/locked.json` |
 
 ### Field builder helpers (in admin.js)
 - `f(label, path, opts)` — text/select/checkbox/textarea field; `path` is dot-notation into `S.data`

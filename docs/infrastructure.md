@@ -648,6 +648,13 @@ rather than around it. Proven in both directions on a scratch branch temporarily
 added to this ruleset: an unverified commit was refused with
 `Required status check "verify" is expected.`, and a verified one was accepted.
 
+### How publishing works around all of this
+
+Section 7 sets out the branch model this ruleset forced: the panel writes to
+`content`, a workflow runs every check and then fast-forwards `main` onto an
+already-verified commit. **No bypass actor is involved**, and the constraint the
+whole thing rests on is named there.
+
 ### Rulesets transfer with the repository
 
 The pre-transfer checklist in this project said branch rulesets would have to be
@@ -664,7 +671,182 @@ re-read afterwards. `updated_at` reflects that edit, not a change of policy.
 
 ---
 
-## 7. Pricing
+## 7. How a change reaches the live site `[verified 11 Sep 2026]`
+
+Two lanes, one destination. GitHub Pages deploys from `main`, so nothing is
+live until `main` moves, and `main` only ever accepts content that has passed
+`verify`.
+
+```
+  BACKEND                                CONTENT
+  a developer                            the admin panel
+      |                                      |
+      | pull request                         | writes data + 29 generated files
+      v                                      v
+  [ main protection ]                    [ content ]
+   verify must pass                          |
+      |                                      | publish-content.yml
+      |                                      |   runs every check
+      |                                      |   waits for verify on THIS sha
+      |                                      |   fast-forwards main
+      +------------------> main <------------+
+                            |
+                            | sync-content.yml
+                            v
+                         content          (kept level after a merge)
+```
+
+### The panel never writes to `main`
+
+The `main protection` ruleset requires the `verify` status check. A commit
+created through the Git Data API has never run CI, so a push straight at `main`
+is refused. That refusal is what blocked publishing for twelve days in
+September 2026, and it cannot be fixed by making the check pass: Actions run
+*after* a ref moves, so a brand-new commit can never already carry a passing
+check. An enforced pre-push status check and a direct push from a browser are
+mutually exclusive.
+
+The panel writes to `content`, which carries no ruleset and therefore can never
+be blocked. `content` was created on 10 Sep 2026.
+
+### Nobody bypasses the ruleset, including the workflow
+
+**There is no bypass actor and none is needed.** This is the part most likely
+to be "simplified" by someone later, so the reasoning is written out.
+
+`.github/workflows/build-check.yml` is `on: [push, pull_request]` with **no
+branch filter**, so a commit pushed to `content` has `verify` run against that
+exact SHA. A required status check is satisfied by a pass on the SHA being
+pushed, not by a pull request. Fast-forwarding `main` onto an already-verified
+commit is therefore accepted **under** the rule rather than around it.
+
+Proven in both directions on one scratch branch temporarily added to the
+ruleset, minutes apart, on 10 Sep 2026:
+
+```
+unverified commit, zero check runs
+  ! [remote rejected] HEAD -> proof-main (push declined due to repository rule violations)
+  remote: - Required status check "verify" is expected.
+
+same branch, a commit carrying verify success
+  c732590..a2fbd15  a2fbd15 -> proof-main
+```
+
+That also settled a second question: the one bypass actor on the ruleset is
+`RepositoryRole 5` at `bypass_mode: pull_request`, and the refused push above
+was made by a repository admin. **`pull_request` mode does not cover a direct
+push.**
+
+This design is better than a bypass on three counts. A red `verify` genuinely
+stops the publish, which an `always` bypass would have prevented. There is no
+standing exemption to audit or to leak. And it works identically on a personal
+account, so moving the repository again breaks nothing.
+
+### DO NOT ADD A BRANCH FILTER TO `build-check.yml`
+
+This is the one constraint the whole design rests on, and breaking it is
+**silent**.
+
+Filter that workflow to `main` and no `verify` check is ever produced for a
+`content` commit. The panel's own write to `content` still succeeds, so the
+panel reports success. Nothing appears wrong until somebody notices the live
+site never changed. The ruleset refuses the fast-forward with:
+
+```
+Repository rule violations found
+
+Required status check "verify" is expected.
+```
+
+`publish-content.yml` carries a step that waits for `verify` and, after 120
+seconds with no such check created **at all**, opens an issue naming
+`build-check.yml` and this constraint. That step is the only warning there is,
+so do not remove it either. Renaming the `verify` job breaks publishing the
+same way and produces the same silence, because the job name **is** the
+required check context.
+
+### The verify-wait, and why polling is not paranoia
+
+`build-check.yml` and `publish-content.yml` both trigger on the same push to
+`content`, so they run **in parallel**. Without a wait, the fast-forward races
+the check it depends on.
+
+This is not a theoretical race. On a completely ordinary publish, with nothing
+slowed down, the wait step's **first poll still read `in_progress`**:
+
+```
+  0s   status=in_progress conclusion=-
+  11s  status=completed conclusion=success
+verify passed after 11s. Safe to fast-forward.
+```
+
+Without the step the push happens at 0s and is refused. It is a coin flip, and
+a coin flip that lands heads while you are testing is the worst kind of bug.
+
+Forced deliberately, with a `sleep 150` added to `build-check.yml` on a proof
+branch only, the step waited the full duration rather than giving up or racing:
+
+```
+  0s    status=in_progress
+  ...   15 polls
+  157s  status=completed conclusion=success
+```
+
+Two deadlines, because the two faults need different sentences. At **120s**
+with no `verify` created at all, the cause is a check that is not going to run
+for this branch, and the issue names `build-check.yml`. At **900s** with
+`verify` still running, the cause is a slow runner and the issue says to try
+again shortly. `skipped` and `neutral` are treated as failures, not passes:
+`build-check.yml` has no condition that can skip it, so either conclusion means
+something nobody here understands has changed.
+
+The wait needs `checks: read` in the workflow's `permissions` block. Without it
+the poll gets a 403 and every publish fails.
+
+### `sync-content.yml`
+
+Runs on a push to `main` and keeps `content` level, so the panel is always
+editing on top of what is live. Four states, one of which writes:
+
+| state | action |
+|---|---|
+| `content` missing | create it from `main` |
+| equal | nothing |
+| behind | fast-forward it |
+| ahead | **leave it alone.** A publish is in flight, or one failed and its work is sitting there unpublished |
+| diverged | **refuse and open an issue.** Choosing whose work to discard is not a decision to automate |
+
+Never forces, never merges.
+
+### The recursion guard
+
+Pushes made with `GITHUB_TOKEN` do not trigger further workflow runs. That is
+load-bearing: without it, this workflow's push to `main` would trigger
+`sync-content.yml`, whose push to `content` would trigger this one.
+
+**Observed, not assumed**, three times: on 10 Sep 2026 when both workflows
+reached `main` by accident inside a documentation pull request and
+`sync-content.yml` created `content` without `publish-content.yml` firing on
+it; again on the proof lane; and again when `content` was created for real.
+
+### Failures reach a person, in plain English
+
+Both workflows open a GitHub issue on failure, labelled `publish-blocked`. The
+label is **created if missing** rather than fallen back from: the old code
+dropped to an unlabelled issue when the label did not exist, which is a silent
+downgrade, because the issue still appears, nobody notices it is unfiltered,
+and a saved filter returns nothing forever.
+
+The issue never contains a git command, a status code or a pull request. It
+names what went wrong, says whether the reader can fix it, and says the live
+site is unchanged. Advice is chosen by fault: a failed content check says
+"undo the changes named above"; a divergence says "nothing to undo, send this
+to a developer", because on a divergence nothing is named and nothing the
+operator typed caused it.
+
+---
+
+## 8. Pricing
 
 **The INR price is not a conversion of the AED price.** India is priced
 separately, at roughly half the AED price converted.
@@ -686,7 +868,7 @@ of which exists yet.
 
 ---
 
-## 8. What cannot be done in the repository
+## 9. What cannot be done in the repository
 
 **GitHub Pages has no redirect mechanism.** No `_redirects`, no `.htaccess`, no
 config file of any kind. Every redirect on this site is a Cloudflare rule
@@ -708,13 +890,74 @@ must be deleted explicitly in the same commit.
 
 ---
 
+## 10. Security findings
+
+### JSON-LD could carry an executing script tag `[found and fixed 11 Sep 2026]`
+
+**This was a security defect, not a formatting one.**
+
+`ld()` in `assets/admin/templates.js` built every JSON-LD block with
+`JSON.stringify`, which does not escape the less-than sign. A `script` element
+is a **raw text element**: the parser ends it at the first closing script tag
+inside it, wherever that came from. So a content value containing one closed
+the block early, and everything after the break was parsed as HTML.
+
+A description containing a closing script tag followed by an opening one put a
+**working, executing script tag on every page that carries JSON-LD**, which is
+26 of the 29 generated files. Observed before fixing, by setting
+`brand.orgDescription` and running `node build.js`:
+
+```
+tools/check_jsonld.py   index.html block 0: INVALID - Unterminated string
+                        VALID 27  INVALID 1        exit 1
+
+index.html              block ends: "description": "Saffron growers in Pampore.
+                        then in the file: <script>alert(1)</script>",
+```
+
+**Reachable by anyone who can edit a product or brand description**, which from
+this month includes a non-technical team with panel access. It is not an
+anonymous-visitor hole: it needs write access to the content. It is a content
+editor being able to put script on the whole site by typing into a text box,
+which is worse than it sounds because nobody editing copy expects to be able to
+do that and nobody reviewing copy is looking for it.
+
+Fixed by writing every less-than sign as its six-character JSON unicode escape.
+That is an ordinary JSON string escape, so `JSON.parse` hands back the original
+character and no consumer sees a difference. Same poisoned data afterwards:
+`VALID 28  INVALID 0`, the text round-trips exactly, and no raw script tag
+survives in the block. No value on the site contains a less-than sign, so **no
+generated page changed**.
+
+**How it was found matters.** Nobody was looking for it. It surfaced while
+building a fault for the panel gate's JSON-LD check, because a plausible way to
+break structured data from content was needed and this was the first one tried.
+It had been live since JSON-LD was added. The lesson is the one this project
+keeps relearning: the exercise of deliberately breaking a thing to watch its
+guard fire finds defects that reading the code does not, which is why hard rule
+8 exists.
+
+One consequence, recorded so it is not mistaken for lost coverage: the gate's
+JSON-LD check now has no fault reachable from content. It is a regression guard
+on the serialiser rather than a check on data, and the only way to make it fire
+is to break the escaping again.
+
+---
+
 ## What still needs confirming
 
-**Nothing.** Every item that was open is now read from an authenticated source:
-the Cloudflare API for the zone, the GitHub API for Pages and the ruleset,
-public resolvers and live HTTP for behaviour.
+**One thing.** Organisation-level rulesets are unread. `GET /orgs/Cyber-Kash/
+rulesets` needs the `admin:org` scope, which neither the panel's fine-grained
+token nor the read-only Cloudflare capture carries. A repository ruleset cannot
+be *weakened* by an organisation one, only tightened, so this is a gap in the
+record rather than a risk to the design, but it is a gap and it is recorded as
+one rather than as "nothing".
 
-Three things this file previously asserted turned out to be wrong, and each is
+Everything else is read from an authenticated source: the Cloudflare API for the
+zone, the GitHub API for Pages and the ruleset, public resolvers and live HTTP
+for behaviour.
+
+Five things this file previously asserted turned out to be wrong, and each is
 corrected in place rather than quietly overwritten:
 
 1. **The MailerLite DKIM record exists.** It is a `CNAME` at
@@ -724,9 +967,22 @@ corrected in place rather than quietly overwritten:
 3. **`www` is a `CNAME` to the apex, proxied.** Section 2. Previously
    unconfirmed, then recorded as undeterminable from outside, which was true of
    the method rather than of the record.
+4. **Moving to an organisation did not unlock the App bypass actor**, which was
+   the stated reason for the transfer, and the transfer happened on the strength
+   of it. Section 6.
+5. **Rulesets transfer with a repository.** The pre-transfer checklist said they
+   would have to be recreated. Section 6.
 
-One defect was found during the capture and is **not fixed**: the `admin
-no-cache` rule matches nothing, section 5. The token used was read-only.
+Numbers 4 and 5 came from the same day. Both were assertions made confidently
+and neither had been tested before it was acted on, which is the same failure
+mode as every entry in the hard rule 8 list in `CLAUDE.md`.
+
+**Still not fixed:** the `admin no-cache` rule matches nothing, section 5. The
+token used for the capture was read-only, so it was reported rather than
+changed. It is the fourth rule in this project found to have never matched
+anything.
+
+**Found and fixed:** JSON-LD could carry an executing script tag, section 10.
 
 ### Keeping it that way
 
