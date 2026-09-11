@@ -46,14 +46,14 @@ saffronofkashmir/
     └── <product-slug>/index.html   one per product, slug from productSlug(p)
 ```
 
-**The build writes 29 files, not 6.** `renderAll` emits, as of 4 Sep 2026:
+**The build writes 32 files, not 6.** `renderAll` emits, as of 11 Sep 2026:
 five top-level pages (`index`, `products`, `recipes`, `blogs`, `404`), the four
 policy pages (`privacy-policy`, `terms`, `shipping-policy`, `returns-policy`),
 one `products/<slug>/index.html` per product (currently six), one
-`blog/<slug>/index.html` per published post (currently 11), plus `sitemap.xml`,
-`llms.txt` and `build-id.json`. That is 26 HTML pages and three other files.
+`blog/<slug>/index.html` per published post (currently 14), plus `sitemap.xml`,
+`llms.txt` and `build-id.json`. That is 29 HTML pages and three other files.
 `build.js` also rewrites `assets/admin/templates.js` with a fresh build id, so
-30 files change on a build, but only 29 are generated output.
+33 files change on a build, but only 32 are generated output.
 
 These counts move whenever a post is published or retired. They went stale once
 already, in the Phase 3 retirements. Do not quote them from here: every check
@@ -341,7 +341,7 @@ output**: `NaN`, `undefined`, `[object Object]`, `Infinity`, `-Infinity` and
 `null`. It exists because `node --check` accepts `x + + y` as valid JavaScript,
 so the 29 Aug 2026 unary-plus bug shipped `NaNcard` into 15 order buttons and
 neither the syntax check, `JSON.parse`, nor the CI output-drift check could see
-it. It covers all 29 generated files and runs in the Build check workflow. It
+it. It covers all 32 generated files and runs in the Build check workflow. It
 has no allowlist and no bypass: if a page ever legitimately needs one of those
 words, change the check deliberately in a reviewable commit.
 
@@ -362,7 +362,7 @@ section forbids. `tools/parity_check.py` refuses to write a baseline inside the
 repo. `robots.txt` disallows `/tools/`.
 
 Parity is only meaningful against a baseline captured BEFORE your edits, from a
-clean tree. Capture first, edit second, compare third. All 26 generated HTML
+clean tree. Capture first, edit second, compare third. All 29 generated HTML
 pages are covered, not just the five top-level ones. `sitemap.xml`, `llms.txt`
 and `build-id.json` are not pages and are not compared.
 
@@ -416,7 +416,7 @@ ran checked 28.
 python tools/check_jsonld.py
 ```
 
-Covers all 26 generated HTML pages. `404.html` legitimately carries no JSON-LD
+Covers all 29 generated HTML pages. `404.html` legitimately carries no JSON-LD
 and is reported, not failed. Exit is non-zero only when a block is present and
 malformed.
 
