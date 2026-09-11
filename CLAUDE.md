@@ -46,14 +46,14 @@ saffronofkashmir/
     └── <product-slug>/index.html   one per product, slug from productSlug(p)
 ```
 
-**The build writes 29 files, not 6.** `renderAll` emits, as of 4 Sep 2026:
+**The build writes 32 files, not 6.** `renderAll` emits, as of 11 Sep 2026:
 five top-level pages (`index`, `products`, `recipes`, `blogs`, `404`), the four
 policy pages (`privacy-policy`, `terms`, `shipping-policy`, `returns-policy`),
 one `products/<slug>/index.html` per product (currently six), one
-`blog/<slug>/index.html` per published post (currently 11), plus `sitemap.xml`,
-`llms.txt` and `build-id.json`. That is 26 HTML pages and three other files.
+`blog/<slug>/index.html` per published post (currently 14), plus `sitemap.xml`,
+`llms.txt` and `build-id.json`. That is 29 HTML pages and three other files.
 `build.js` also rewrites `assets/admin/templates.js` with a fresh build id, so
-30 files change on a build, but only 29 are generated output.
+33 files change on a build, but only 32 are generated output.
 
 These counts move whenever a post is published or retired. They went stale once
 already, in the Phase 3 retirements. Do not quote them from here: every check
@@ -341,7 +341,7 @@ output**: `NaN`, `undefined`, `[object Object]`, `Infinity`, `-Infinity` and
 `null`. It exists because `node --check` accepts `x + + y` as valid JavaScript,
 so the 29 Aug 2026 unary-plus bug shipped `NaNcard` into 15 order buttons and
 neither the syntax check, `JSON.parse`, nor the CI output-drift check could see
-it. It covers all 29 generated files and runs in the Build check workflow. It
+it. It covers all 32 generated files and runs in the Build check workflow. It
 has no allowlist and no bypass: if a page ever legitimately needs one of those
 words, change the check deliberately in a reviewable commit.
 
@@ -362,7 +362,7 @@ section forbids. `tools/parity_check.py` refuses to write a baseline inside the
 repo. `robots.txt` disallows `/tools/`.
 
 Parity is only meaningful against a baseline captured BEFORE your edits, from a
-clean tree. Capture first, edit second, compare third. All 26 generated HTML
+clean tree. Capture first, edit second, compare third. All 29 generated HTML
 pages are covered, not just the five top-level ones. `sitemap.xml`, `llms.txt`
 and `build-id.json` are not pages and are not compared.
 
@@ -416,7 +416,7 @@ ran checked 28.
 python tools/check_jsonld.py
 ```
 
-Covers all 26 generated HTML pages. `404.html` legitimately carries no JSON-LD
+Covers all 29 generated HTML pages. `404.html` legitimately carries no JSON-LD
 and is reported, not failed. Exit is non-zero only when a block is present and
 malformed.
 
@@ -425,38 +425,65 @@ tests a top-level `@type` matches nothing on any page and reports clean. Walk
 `@graph` before asserting on node types.
 
 ### `brand`
-Core site identity. Key fields:
+Core site identity, as it actually is. This sample went stale and said
+`Est. 2004`, `foundingYear: "2004"`, three wrong image filenames, an
+`instagramUser` field that no longer exists, and an INR line with no markup.
+**If this block and `data/site-data.json` disagree, the JSON wins** and this
+block is the thing to fix.
+
 ```json
 {
   "name": "Saffron of Kashmir",
-  "tagline": "Pampore · Est. 2004",
+  "tagline": "Pampore, Kashmir",
   "siteUrl": "https://saffronofkashmir.com",
-  "logo": "logo.webp",
-  "favicon": "favicon.webp",
-  "ogImage": "Cover.webp",
+  "logo": "logo-1.webp",
+  "favicon": "logoback-1.webp",
+  "ogImage": "covercgpt-1.webp",
   "phoneDisplay": "+91 7006 603060",
   "phoneTel": "+917006603060",
   "whatsappNumber": "971522613060",
+  "whatsappIndia": "917006603060",
+  "whatsappUae": "971522613060",
+  "whatsappNumbers": [ ... ],
   "defaultWaText": "Hi! I'd like to order from Saffron of Kashmir.",
   "email": "info@saffronofkashmir.com",
-  "instagramUser": "saffron_of_kashmir",
-  "foundingYear": "2004",
+  "social": [ { "name": "Instagram", "url": "..." }, ... ],
+  "fssaiNumber": "21026111000535",
+  "foundingYear": "2026",
+  "harvestYear": "2025",
+  "priceValidUntil": "2027-09-01",
   "orgDescription": "...",
   "gaId": "G-9569ES4LBP",
   "fbPixelId": "1140202034977517",
   "baseCurrency": "AED",
   "currencies": {
-    "AED": { "name": "UAE Dirham",   "symbol": "AED", "rate": 1,      "decimals": 2, "markup": 0 },
-    "USD": { "name": "US Dollar",    "symbol": "USD", "rate": 0.2723, "decimals": 2, "markup": 0 },
-    "INR": { "name": "Indian Rupee", "symbol": "₹",   "rate": 22.73,  "decimals": 0, "markup": 0 },
-    "SAR": { "name": "Saudi Riyal",  "symbol": "SAR", "rate": 1.021,  "decimals": 2, "markup": 0 },
-    "QAR": { "name": "Qatari Riyal", "symbol": "QAR", "rate": 0.991,  "decimals": 2, "markup": 0 },
-    "OMR": { "name": "Omani Rial",   "symbol": "OMR", "rate": 0.1048, "decimals": 3, "markup": 0 }
+    "AED": { "name": "UAE Dirham",    "symbol": "AED",   "rate": 1,       "decimals": 2, "markup": 0 },
+    "USD": { "name": "US Dollar",     "symbol": "USD",   "rate": 0.2723,  "decimals": 2, "markup": 0 },
+    "INR": { "name": "Indian Rupee",  "symbol": "₹",     "rate": 26.02,   "decimals": 0, "markup": -50 },
+    "SAR": { "name": "Saudi Riyal",   "symbol": "SAR",   "rate": 1.021,   "decimals": 2, "markup": 0 },
+    "QAR": { "name": "Qatari Riyal",  "symbol": "QAR",   "rate": 0.991,   "decimals": 2, "markup": 0 },
+    "OMR": { "name": "Omani Rial",    "symbol": "OMR",   "rate": 0.1048,  "decimals": 3, "markup": 0 }
   }
 }
 ```
+
+- `foundingYear` is **2026**, the year the business began selling direct. The
+  family has farmed in Pampore for three generations, which is a different
+  claim and is made separately in `story.paragraphs[1]`. Do not merge the two.
+- `harvestYear` is the **single source** for the harvest year shown on every
+  product page. It changes once a year and in one place.
+- `fssaiNumber` is **locked** in `tools/locked.json`. It prints in the footer of
+  every page as an official registration, so it is changed by a developer
+  through a pull request, never from the panel.
+- `social` is a list of `{ name, url }`. It replaced a single `instagramUser`
+  field. Only the platforms in `SOCIAL_ICONS` in `templates.js` render a footer
+  icon; the rest still appear in structured data.
 - `rate`: exchange rate from AED (base) to this currency.
 - `markup`: percentage applied on top of the rate. `price = aed * rate * (1 + markup/100)`. Positive = mark up (e.g. shipping premium). Negative = mark down (e.g. local market pricing). 0 = pure conversion.
+- **INR carries `markup: -50` and that is deliberate.** India is priced at
+  roughly half the converted AED price, so a Merchant Center feed built by
+  converting AED will be wrong for India by a factor of two. See
+  `docs/infrastructure.md` section 8.
 - `decimals`: displayed decimal places (OMR uses 3, INR uses 0).
 - Prices on the site are stored in AED. All other currencies are converted client-side in `main.js`.
 

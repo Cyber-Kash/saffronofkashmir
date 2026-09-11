@@ -94,6 +94,22 @@
       ]
     },
     {
+      "name": "aroma window, months from harvest",
+      "accepted": ["12"],
+      "note": "How long the saffron is at full aroma. NOT the same quantity as how long it keeps, and the two contradicted each other until 11 Sep 2026: the storage FAQ said full colour and aroma for 36 months while storing-saffron said aroma goes first and to use it within 12. Now stated in storing-saffron, the storage FAQ and all three tin specs, in the same words.",
+      "patterns": [
+        "use it within\\s+(\\d+)\\s+months of harvest"
+      ]
+    },
+    {
+      "name": "keeping time before it fades, years",
+      "accepted": ["2-3"],
+      "note": "How long it keeps without spoiling, a different quantity from the aroma window above. Replaced a bare '36 months' that sat on two tins and in the FAQ with no citation anywhere on the site. 3 years is the top of this range, so stating it as a range takes nothing away.",
+      "patterns": [
+        "keeps\\s+([\\d-]+)\\s+years without spoiling"
+      ]
+    },
+    {
       "name": "ISO 3632 moisture maximum, percent",
       "accepted": ["12"],
       "note": "Stated in five posts and in the purity checker's cannotSee panel.",
