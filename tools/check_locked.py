@@ -46,6 +46,7 @@ authorship decision in the workflow means this script stays testable from a
 plain checkout.
 """
 import argparse
+from collections import Counter
 import io
 import json
 import os
@@ -178,14 +179,50 @@ def path_lock_for(path):
     return None
 
 
-def token_locks_for(*values):
+def token_matches(rx, value):
+    """Every substring of `value` the pattern matches, in order."""
+    if not isinstance(value, str):
+        return []
+    return [m.group(0) for m in rx.finditer(value)]
+
+
+def token_locks_for(before, after):
+    """Locks whose CLAIM changed, not whose string merely changed.
+
+    This used to fire whenever either side contained the token at all, so
+    editing any string that already mentioned a regulated claim was refused
+    even when the edit was somewhere else entirely in that string. Eleven of
+    the fifteen post bodies mention ISO 3632, Category I or NABL somewhere, so
+    in practice it locked eleven post bodies rather than the four the path list
+    names, and fixing a typo in one of them needed a developer.
+
+    That is the failure the teaching refusal exists to prevent, one step
+    further out: a lock that makes ordinary work impossible does not get
+    obeyed, it gets routed around, and then none of the locks are consulted at
+    all.
+
+    The threat is a claim being added, removed or altered. So compare the claim
+    text itself: collect what the pattern matches on each side and fire only
+    when those differ. Counts are compared too, so adding a second identical
+    claim still fires. Order is not, because the pattern matches the claim and
+    not its surroundings, so moving a paragraph leaves the same claims and is
+    not a change to any of them.
+
+    Returns (lock, removed, added) per firing lock, so the refusal can name the
+    claim rather than clipping the first 110 characters of a 5,000 character
+    article body, which told the reader nothing.
+    """
     hits = []
     for lock in LOCKED_TOKENS:
         rx = re.compile(lock["pattern"])
-        for v in values:
-            if isinstance(v, str) and rx.search(v):
-                hits.append(lock)
-                break
+        b = token_matches(rx, before)
+        a = token_matches(rx, after)
+        if sorted(b) == sorted(a):
+            continue
+        cb, ca = Counter(b), Counter(a)
+        removed = sorted((cb - ca).elements())
+        added = sorted((ca - cb).elements())
+        hits.append((lock, removed, added))
     return hits
 
 
@@ -247,8 +284,8 @@ def main():
         if lock:
             violations.append(("path", key, lock, b.get(key), a.get(key)))
             continue
-        for tlock in token_locks_for(b.get(key), a.get(key)):
-            violations.append(("token", key, tlock, b.get(key), a.get(key)))
+        for tlock, removed, added in token_locks_for(b.get(key), a.get(key)):
+            violations.append(("token", key, tlock, removed, added))
 
     print("compared %d value(s) before against %d after, %d changed"
           % (len(b), len(a), len(changed)))
@@ -267,11 +304,17 @@ def main():
             print("      why locked  : %s" % lock["why"])
             print("      who changes : %s" % DEV)
         else:
-            print("      you changed : text containing %s" % lock["what"])
+            print("      you changed : %s" % lock["what"])
             print("      why locked  : %s" % lock["why"])
             print("      what to do  : %s" % lock["instead"])
             print("      who changes : %s" % DEV)
-        if isinstance(old, str) and isinstance(new, str):
+        if kind == "token":
+            # old/new here are the claims removed and added, not whole values.
+            if old:
+                print("      removed     : %s" % ", ".join(repr(x) for x in old))
+            if new:
+                print("      added       : %s" % ", ".join(repr(x) for x in new))
+        elif isinstance(old, str) and isinstance(new, str):
             print("      was  : %s" % (old[:110] + ("..." if len(old) > 110 else "")))
             print("      now  : %s" % (new[:110] + ("..." if len(new) > 110 else "")))
         print("")

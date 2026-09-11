@@ -19,7 +19,7 @@
      admin.js compares this value against the build-id.json on the live site
      before publishing, and blocks the publish if they differ. See the 29 Aug
      2026 incident in docs/RESUME.md. */
-  var BUILD_ID = '213fca753054';
+  var BUILD_ID = '33300c87aad7';
 
   /* ---------- helpers ---------- */
 

@@ -490,6 +490,38 @@
     }
   }
 
+  /* Every substring of `value` the pattern matches, in order. null means the
+     pattern itself will not compile here, which is a different problem and is
+     reported separately rather than read as "no claims found". */
+  function tokenMatches(pattern, value) {
+    let rx;
+    try { rx = new RegExp(pattern, 'g'); } catch (err) { return null; }
+    if (typeof value !== 'string') return [];
+    const out = [];
+    let m;
+    while ((m = rx.exec(value)) !== null) {
+      if (m[0] === '') { rx.lastIndex++; continue; }
+      out.push(m[0]);
+    }
+    return out;
+  }
+
+  /* Entries of `from` not accounted for by `take`, counting duplicates, so
+     adding a second identical claim is still seen as an addition. */
+  function multisetDiff(from, take) {
+    const pool = take.slice();
+    const out = [];
+    for (let i = 0; i < from.length; i++) {
+      const at = pool.indexOf(from[i]);
+      if (at === -1) out.push(from[i]); else pool.splice(at, 1);
+    }
+    return out.sort();
+  }
+
+  function sameClaims(a, b) {
+    return a.slice().sort().join('\u0000') === b.slice().sort().join('\u0000');
+  }
+
   function clip(v, n) {
     if (typeof v !== 'string') return v == null ? '(empty)' : String(v);
     return v.length > (n || 110) ? v.slice(0, n || 110) + '...' : v;
@@ -975,18 +1007,34 @@
         });
         return;
       }
+      /* Fire on a change to the CLAIM, not to the string holding it. Mirrors
+         token_locks_for in tools/check_locked.py, which is the enforcing copy
+         and was narrowed first. See tools/locked.json for why. */
       (spec.tokens || []).forEach(function (lock) {
-        let rx;
-        try { rx = new RegExp(lock.pattern); } catch (err) { return; }
-        const inOld = typeof b[key] === 'string' && rx.test(b[key]);
-        rx.lastIndex = 0;
-        const inNew = typeof a[key] === 'string' && rx.test(a[key]);
-        if (inOld || inNew) {
+        const was = tokenMatches(lock.pattern, b[key]);
+        const now = tokenMatches(lock.pattern, a[key]);
+        if (was === null || now === null) {
           findings.push({
-            where: key, what: 'you changed text containing ' + lock.what, why: lock.why,
-            todo: lock.instead, who: gateDev(), was: clip(b[key]), now: clip(a[key])
+            where: 'tools/locked.json  ' + lock.what,
+            what: 'its pattern does not work in this browser, so this lock could not be checked',
+            why: 'A lock that cannot run must not read as a lock that found nothing.',
+            todo: 'Reload the panel (Ctrl+Shift+R). If it persists, send this to a developer.',
+            who: gateDev()
           });
+          return;
         }
+        if (sameClaims(was, now)) return;
+        const removed = multisetDiff(was, now);
+        const added = multisetDiff(now, was);
+        findings.push({
+          where: key,
+          what: 'you changed ' + lock.what,
+          why: lock.why,
+          todo: lock.instead,
+          who: gateDev(),
+          removed: removed,
+          added: added
+        });
       });
     });
 
@@ -1086,7 +1134,18 @@
         if (fd.why) rows.push('<div style="color:#6b5c48;">' + A(fd.why) + '</div>');
         if (fd.todo) rows.push('<div><strong>What to do:</strong> ' + A(fd.todo) + '</div>');
         if (fd.who) rows.push('<div style="color:#6b5c48;">' + A(fd.who) + '</div>');
-        if (fd.was !== undefined && fd.now !== undefined) {
+        if (fd.removed !== undefined || fd.added !== undefined) {
+          /* Naming the claim beats clipping the first 110 characters of a
+             5,000 character article body, which told the reader nothing. */
+          if ((fd.removed || []).length) {
+            rows.push('<div style="color:#6b5c48;">claim removed: ' +
+              A(fd.removed.map(function (x) { return '"' + x + '"'; }).join(', ')) + '</div>');
+          }
+          if ((fd.added || []).length) {
+            rows.push('<div style="color:#6b5c48;">claim added: ' +
+              A(fd.added.map(function (x) { return '"' + x + '"'; }).join(', ')) + '</div>');
+          }
+        } else if (fd.was !== undefined && fd.now !== undefined) {
           rows.push('<div style="color:#6b5c48;">was: ' + A(String(fd.was)) + '</div>');
           rows.push('<div style="color:#6b5c48;">now: ' + A(String(fd.now)) + '</div>');
         } else if (fd.now !== undefined) {
