@@ -1367,7 +1367,7 @@
     "privacy": {
       "title": "Privacy Policy",
       "slug": "privacy-policy.html",
-      "lastUpdated": "29 August 2026",
+      "lastUpdated": "22 September 2026",
       "metaTitle": "Privacy Policy | Saffron of Kashmir",
       "metaDescription": "What personal data we collect, who processes it, how long we keep it, and your rights under the DPDP Act 2023.",
       "sections": [
@@ -1385,11 +1385,11 @@
         },
         {
           "heading": "Who processes it",
-          "body": "- **Google Analytics** (Google LLC): site usage statistics\n- **Meta Pixel** (Meta Platforms): advertising measurement\n- **Mailchimp** (Intuit): email list\n- **ipapi.co**: country lookup from IP address\n- **GitHub Pages and Cloudflare**: hosting and delivery, including server logs\n\nSome of these store or process data outside India."
+          "body": "- **Google Analytics** (Google LLC): site usage statistics\n- **Meta Pixel** (Meta Platforms): advertising measurement\n- **Cloudflare Web Analytics** (Cloudflare): page view counts, added at the edge and without cookies\n- **Mailchimp** (Intuit): email list\n- **ipapi.co**: country lookup from IP address\n- **GitHub Pages and Cloudflare**: hosting and delivery, including server logs\n\nSome of these store or process data outside India."
         },
         {
           "heading": "What we store in your browser",
-          "body": "Not cookies, but browser storage that does the same job:\n\n- `sok_currency` and `sok_country`: your currency and region\n- `sok_overlay_seen` and `sok_overlay_done`: whether you have seen the discount popup\n- an order reference code, generated in your browser so we can tell which orders came from where\n\nClearing your browser data removes all of these."
+          "body": "Three cookies, all set by the analytics and advertising tools named above and none by us directly:\n\n- `_ga` and `_ga_9569ES4LBP`: Google Analytics, to recognise a returning browser\n- `_fbp`: Meta Pixel, for advertising measurement\n\nBrowser storage that does a similar job, set by this site:\n\n- `sok_currency` and `sok_country`: your currency and region\n- `sok_overlay_seen` and `sok_overlay_done`: whether you have seen the discount popup\n- an order reference code, generated in your browser so we can tell which orders came from where\n\nMeta's script also stores `lastExternalReferrer` and `lastExternalReferrerTime`: the site you arrived from, and when.\n\nClearing your browser data removes all of these."
         },
         {
           "heading": "Why we use it",
