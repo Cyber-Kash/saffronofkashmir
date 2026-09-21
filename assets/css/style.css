@@ -193,6 +193,9 @@ details.specs[open] summary::after { content: " −"; }
   padding: 8px 18px; font-size: 14.5px; cursor: pointer; color: var(--ink); font-family: var(--font-body);
 }
 .filter-btn[aria-pressed="true"] { background: var(--burgundy); color: #fff; border-color: var(--burgundy); }
+.filter-empty { color: var(--muted); margin: 8px 0 0; }
+.filter-reset { background: none; border: 0; padding: 0; font: inherit; color: var(--burgundy); text-decoration: underline; cursor: pointer; }
+.filter-reset:hover { color: var(--burgundy-dark); }
 
 /* Comparison table */
 .table-wrap { overflow-x: auto; }
