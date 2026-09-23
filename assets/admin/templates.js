@@ -19,7 +19,7 @@
      admin.js compares this value against the build-id.json on the live site
      before publishing, and blocks the publish if they differ. See the 29 Aug
      2026 incident in docs/RESUME.md. */
-  var BUILD_ID = '4c3a0ac71a54';
+  var BUILD_ID = '880df6f4de71';
 
   /* ---------- helpers ---------- */
 
@@ -246,6 +246,18 @@
     return '  <script type="application/ld+json">\n  ' +
       JSON.stringify(obj, null, 2).replace(/</g, '\\u003c').replace(/\n/g, '\n  ') +
       '\n  </script>';
+  }
+
+  /* Shown by main.js when a category filter hides every card. Without it a
+     filter with no matches left a blank grid and no explanation; every filter
+     has at least one item today, but the heritage category has exactly one
+     post and it is queued for retire-or-merge. role=status so a screen reader
+     announces it when it appears. The button hands back to the "all" filter. */
+  function filterEmpty(targetSel, allLabel) {
+    return '      <p class="filter-empty" role="status" data-filter-empty-for="' + esc(targetSel) + '" hidden>' +
+      'Nothing in this category yet. ' +
+      '<button type="button" class="filter-reset">Show ' + esc(String(allLabel || 'everything').toLowerCase()) + '</button>' +
+      '</p>\n';
   }
 
   function statusBadge(status) {
@@ -1017,6 +1029,7 @@
       '      <h1>' + esc(pp.h1) + '</h1>\n' +
       '      <p class="section-sub">' + esc(pp.sub) + '</p>\n\n' +
       filterBtns + '\n      <div class="grid-3" id="products-grid">\n' + cards + '\n      </div>\n' +
+      filterEmpty('#products-grid', pp.allLabel) +
       '    </div>\n  </section>\n' +
       compare + identify + delivery + '</main>\n\n' +
       footer(data, 'products');
@@ -1393,7 +1406,7 @@
       '      <h1>' + esc(bp.h1) + '</h1>\n' +
       '      <p class="section-sub">' + esc(bp.sub) + '</p>\n\n' +
       filterBtns + '\n      <div class="blog-layout">\n        <div id="blog-list">\n\n' +
-      articles + '\n\n        </div>\n\n' + sidebar +
+      articles + '\n\n' + filterEmpty('#blog-list', bp.allLabel) + '        </div>\n\n' + sidebar +
       '      </div>\n    </div>\n  </section>\n</main>\n\n' +
       footer(data, 'blogs');
   }
