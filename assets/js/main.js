@@ -27,18 +27,38 @@
   document.querySelectorAll('[data-filter-bar]').forEach(function (bar) {
     var targetSel = bar.getAttribute('data-filter-target');
     var items = document.querySelectorAll(targetSel + ' [data-category]');
+    // Rendered hidden by templates.js. Shown only when a filter leaves nothing
+    // visible, so a category that has just lost its last item explains itself
+    // instead of presenting an empty grid.
+    var empty = document.querySelector('[data-filter-empty-for="' + targetSel + '"]');
+
+    function apply(f) {
+      var shown = 0;
+      items.forEach(function (item) {
+        var cats = item.getAttribute('data-category').split(' ');
+        var on = (f === 'all' || cats.indexOf(f) !== -1);
+        item.style.display = on ? '' : 'none';
+        if (on) shown++;
+      });
+      if (empty) empty.hidden = shown > 0;
+    }
+
     bar.addEventListener('click', function (e) {
       var btn = e.target.closest('.filter-btn');
       if (!btn) return;
       bar.querySelectorAll('.filter-btn').forEach(function (b) {
         b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
       });
-      var f = btn.getAttribute('data-filter');
-      items.forEach(function (item) {
-        var cats = item.getAttribute('data-category').split(' ');
-        item.style.display = (f === 'all' || cats.indexOf(f) !== -1) ? '' : 'none';
-      });
+      apply(btn.getAttribute('data-filter'));
     });
+
+    if (empty) {
+      empty.addEventListener('click', function (e) {
+        if (!e.target.closest('.filter-reset')) return;
+        var all = bar.querySelector('.filter-btn[data-filter="all"]');
+        if (all) { all.click(); all.focus(); }
+      });
+    }
   });
 
   // Order attribution.
