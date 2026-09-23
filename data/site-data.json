@@ -1416,6 +1416,35 @@
           "body": "We will update this page when our practices change, and change the date at the top."
         }
       ]
+    },
+    "accessibility": {
+      "title": "Accessibility",
+      "slug": "accessibility.html",
+      "lastUpdated": "22 September 2026",
+      "metaTitle": "Accessibility | Saffron of Kashmir",
+      "metaDescription": "What this site does to be usable by everyone, what it has not been checked for, and how to tell us when something is in your way.",
+      "sections": [
+        {
+          "heading": "",
+          "body": "We want anyone to be able to read about our saffron and order it, whatever device or assistive tool they use. This page says what the site does towards that, what it has not been checked for, and how to tell us when something is in your way. It does not claim a standard we have not tested against."
+        },
+        {
+          "heading": "What the site does",
+          "body": "- A \"Skip to content\" link is the first thing keyboard users reach on every page.\n- Anything that takes keyboard focus shows a visible gold outline.\n- If your device asks for reduced motion, animations and smooth scrolling are switched off.\n- Every image carries a text description.\n- The category filters on the products and blog pages are real buttons, and they announce whether they are pressed.\n- Icon-only controls, such as the social links and the back-to-top button, carry text labels for screen readers.\n- Headings run in order with one main heading per page, so a screen reader can outline it.\n- Text is set at 17 pixels and scales with your zoom. Nothing on the site blocks zooming.\n- The purity checker's questions are ordinary radio buttons, so they work with a keyboard and show their reasoning without JavaScript. Only the summary at the end needs it."
+        },
+        {
+          "heading": "What has not been checked",
+          "body": "No formal accessibility audit has been done, by us or by anyone else. We have not measured colour contrast against a standard, and we have not tested with a screen reader beyond the points above.\n\nSo this page does not claim conformance with WCAG or any other standard. We could not show you the test that would back the claim, and a claim we cannot back is worse than an honest gap."
+        },
+        {
+          "heading": "Known limits",
+          "body": "- Prices are written in UAE dirhams. Showing them in your own currency needs JavaScript. Without it you see dirhams, which are the real prices.\n- The discount popup needs JavaScript. Without it there is no popup and nothing else is lost.\n- Orders are placed over WhatsApp, which is Meta's app. If it does not work for you, email or phone us and we will take your order that way."
+        },
+        {
+          "heading": "Tell us",
+          "body": "If something on this site does not work for you, write to [info@saffronofkashmir.com](mailto:info@saffronofkashmir.com) and say which page and what you were using. We will fix what we can."
+        }
+      ]
     }
   },
   "overlay": {
